@@ -265,8 +265,8 @@ pub fn type_parser() -> impl Parser<Token, Spanned<Type>, Error = Simple<Token>>
     //
     // <type>             => <base-type> | <array-type> | <pair-type>
     // <base-type>        => 'int' | 'bool' | 'char' | 'string'
-    // <type-exl-array>   => <base-type> | <pair-type>
-    // <array-type>       => <type-exl-array> '[' ']' <array-type-prime>
+    // <type-excl-array>   => <base-type> | <pair-type>
+    // <array-type>       => <type-excl-array> '[' ']' <array-type-prime>
     // <array-type-prime> => '[' ']' <array-type-prime> | ϵ
     // <pair-type>        => 'pair' '(' <pair-elem-type> ',' <pair-elem-type> ')'
     // <pair-elem-type>   => <base-type> | <array-type> | 'pair'
@@ -282,13 +282,13 @@ pub fn type_parser() -> impl Parser<Token, Spanned<Type>, Error = Simple<Token>>
     }
 
     #[derive(Clone, Debug)]
-    enum RRTypeExlArray {
+    enum RRTypeExclArray {
         BaseType(BaseType),
         RRPairType(Box<RRPairType>),
     }
 
     #[derive(Clone, Debug)]
-    struct RRArrayType(RRTypeExlArray, RRArrayTypePrime);
+    struct RRArrayType(RRTypeExclArray, RRArrayTypePrime);
 
     #[derive(Debug, Clone)]
     enum RRArrayTypePrime {
@@ -324,8 +324,8 @@ pub fn type_parser() -> impl Parser<Token, Spanned<Type>, Error = Simple<Token>>
         // extract the innermost array type, then build atop it by unwrapping the RRArrayTypePrime
         let mut array_type = ArrayType {
             elem_type: Box::new(match element_type {
-                RRTypeExlArray::BaseType(b) => Type::BaseType(b),
-                RRTypeExlArray::RRPairType(p) => {
+                RRTypeExclArray::BaseType(b) => Type::BaseType(b),
+                RRTypeExclArray::RRPairType(p) => {
                     Type::PairType(convert_rrpair_elem_type(p.0), convert_rrpair_elem_type(p.1))
                 }
             }),
@@ -387,7 +387,7 @@ pub fn type_parser() -> impl Parser<Token, Spanned<Type>, Error = Simple<Token>>
         .then_ignore(just(Token::Symbol(Symbol::OpenBracket)))
         .then_ignore(just(Token::Symbol(Symbol::CloseBracket)))
         .then(rrarray_type_prime.clone())
-        .map(|(b, prime)| RRArrayType(RRTypeExlArray::BaseType(b), prime));
+        .map(|(b, prime)| RRArrayType(RRTypeExclArray::BaseType(b), prime));
     fn pair_type_variant_array_type_factory<E: Error<Token>, P, A>(
         rrpair_elem_type: P,
         rrarray_type_prime: A,
@@ -400,7 +400,7 @@ pub fn type_parser() -> impl Parser<Token, Spanned<Type>, Error = Simple<Token>>
             .then_ignore(just(Token::Symbol(Symbol::OpenBracket)))
             .then_ignore(just(Token::Symbol(Symbol::CloseBracket)))
             .then(rrarray_type_prime)
-            .map(|(p, prime)| RRArrayType(RRTypeExlArray::RRPairType(Box::new(p)), prime))
+            .map(|(p, prime)| RRArrayType(RRTypeExclArray::RRPairType(Box::new(p)), prime))
     }
 
     // pair-elem-type parser, which tires to re-use as many building blocks as possible
