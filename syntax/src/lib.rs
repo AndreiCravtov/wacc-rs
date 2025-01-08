@@ -1,6 +1,6 @@
 extern crate core;
 
-mod source;
+pub mod source;
 pub mod token;
 
 pub(crate) mod private {

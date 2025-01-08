@@ -136,6 +136,16 @@ where
     }
 }
 
+impl<SourceIdT, SpanT> fmt::Display for WithSourceId<SourceIdT, SpanT>
+where
+    SourceIdT: SourceId + fmt::Display,
+    SpanT: ChumskySpan<Offset = usize> + fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}:{}", self.source_id, self.span)
+    }
+}
+
 impl<SourceIdT, SpanT> ChumskySpan for WithSourceId<SourceIdT, SpanT>
 where
     SourceIdT: SourceId,

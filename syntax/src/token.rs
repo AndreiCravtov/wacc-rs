@@ -1,10 +1,9 @@
 use crate::source::{SourceId, WithSourceId};
 use crate::CharExt;
 use chumsky::error::Rich;
-use chumsky::extra::ParserExtra;
 use chumsky::input::WithContext;
 use chumsky::prelude::{any, choice, end, just, regex, skip_then_retry_until, Input};
-use chumsky::{text, IterParser, Parser};
+use chumsky::{extra, text, IterParser, Parser};
 use internment::ArcIntern;
 use std::fmt;
 use std::fmt::Formatter;
@@ -152,16 +151,11 @@ impl fmt::Display for Token<'_> {
 type LexerInput<'src> = &'src str;
 type SourcedLexerSpan<'src, S> = WithSourceId<S, <LexerInput<'src> as Input<'src>>::Span>;
 type SourcedLexerInput<'src, S> = WithContext<SourcedLexerSpan<'src, S>, LexerInput<'src>>;
+type SpannedLexerOutput<'src, S> = Vec<(Token<'src>, SourcedLexerSpan<'src, S>)>;
+type LexerExtra<'src, S> = extra::Full<Rich<'src, char, SourcedLexerSpan<'src, S>>, (), ()>;
 
-pub fn lexer<'src, S, E>(
-) -> impl Parser<'src, SourcedLexerInput<'src, S>, Vec<(Token<'src>, SourcedLexerSpan<'src, S>)>, E>
-where
-    S: SourceId + 'src,
-    E: ParserExtra<
-        'src,
-        SourcedLexerInput<'src, S>,
-        Error = Rich<'src, char, SourcedLexerSpan<'src, S>>,
-    >,
+pub fn lexer<'src, S: SourceId + 'src>(
+) -> impl Parser<'src, SourcedLexerInput<'src, S>, SpannedLexerOutput<'src, S>, LexerExtra<'src, S>>
 {
     // WACC identifiers are C-style, so we can use the default `text::ident` parser
     let ident = text::ident().map(|id| Token::Ident(id));
@@ -179,20 +173,20 @@ where
 
     // character parser
     let character = choice((
-        any::<_, E>().filter(char::normal_wacc_char),
-        just::<char, _, E>('\\')
+        any().filter(char::normal_wacc_char),
+        just('\\')
             .ignore_then(any())
             .filter(char::escaped_wacc_char),
     ));
 
     // character literal parser
-    let char_delim = just::<char, _, E>('\'');
+    let char_delim = just('\'');
     let char_liter = character
         .delimited_by(char_delim, char_delim)
         .map(Token::CharLiter);
 
     // string literal parser
-    let string_delim = just::<char, _, E>('"');
+    let string_delim = just('"');
     let string_liter = character
         .repeated()
         .collect::<String>()
