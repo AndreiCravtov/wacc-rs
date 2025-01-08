@@ -92,7 +92,7 @@ begin
   done ;
   print "Here are the numbers sorted: " ;
   i = call printTree(root) ;
-  println ""
+  println "\t\n\0\f\r"
 end
 "#;
 

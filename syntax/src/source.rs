@@ -1,3 +1,4 @@
+use crate::node::Node;
 use ariadne::Span as AriadneSpan;
 use chumsky::prelude::SimpleSpan;
 use chumsky::span::Span as ChumskySpan;
@@ -17,18 +18,22 @@ pub struct StrSourceId(Intern<str>);
 impl SourceId for StrSourceId {}
 
 impl StrSourceId {
+    #[inline]
     pub fn empty() -> Self {
         StrSourceId(Intern::from(""))
     }
 
+    #[inline]
     pub fn repl() -> Self {
         StrSourceId(Intern::from("repl"))
     }
 
+    #[inline]
     pub fn from_str(s: &str) -> Self {
         StrSourceId(Intern::from(s))
     }
 
+    #[inline]
     pub fn from_boxed_str(s: Box<str>) -> StrSourceId {
         StrSourceId(Intern::from(s))
     }
@@ -43,9 +48,13 @@ impl StrSourceId {
         StrSourceId::from_string(path.as_ref().to_string_lossy().into_owned())
     }
 
+    #[inline]
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    #[inline]
 
     pub fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -117,10 +126,12 @@ where
         Self { source_id, span }
     }
 
+    #[inline]
     pub fn as_range(&self) -> Range<usize> {
         self.span.start()..self.span.end()
     }
 
+    #[inline]
     pub fn into_range(self) -> Range<usize> {
         self.span.start()..self.span.end()
     }
@@ -131,6 +142,7 @@ where
     SourceIdT: SourceId + fmt::Debug,
     SpanT: ChumskySpan<Offset = usize> + fmt::Debug,
 {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}:{:?}", self.source_id, self.span)
     }
@@ -141,6 +153,7 @@ where
     SourceIdT: SourceId + fmt::Display,
     SpanT: ChumskySpan<Offset = usize> + fmt::Display,
 {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}:{}", self.source_id, self.span)
     }
@@ -182,15 +195,33 @@ where
 {
     type SourceId = SourceIdT;
 
+    #[inline]
     fn source(&self) -> &Self::SourceId {
         &self.source_id
     }
 
+    #[inline]
     fn start(&self) -> usize {
         self.span.start()
     }
 
+    #[inline]
     fn end(&self) -> usize {
         self.span.end()
+    }
+}
+
+pub type SourcedSpan = WithSourceId<StrSourceId, SimpleSpan>;
+pub type SourcedNode<T> = Node<T, SourcedSpan>;
+
+impl<T> SourcedNode<T> {
+    #[inline]
+    pub fn source_id(&self) -> StrSourceId {
+        self.context().source_id
+    }
+
+    #[inline]
+    pub fn span(&self) -> SourcedSpan {
+        self.context().clone()
     }
 }

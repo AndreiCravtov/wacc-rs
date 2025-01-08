@@ -15,9 +15,9 @@ pub enum Delim {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Token<'src> {
+pub enum Token {
     // literals
-    Ident(&'src str),
+    Ident(ArcIntern<str>),
     IntLiter(i32),
     CharLiter(char),
     StringLiter(ArcIntern<str>),
@@ -80,7 +80,7 @@ pub enum Token<'src> {
     False,
 }
 
-impl fmt::Display for Token<'_> {
+impl fmt::Display for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Token::Ident(s) => write!(f, "{}", s),
@@ -151,14 +151,19 @@ impl fmt::Display for Token<'_> {
 type LexerInput<'src> = &'src str;
 type SourcedLexerSpan<'src, S> = WithSourceId<S, <LexerInput<'src> as Input<'src>>::Span>;
 type SourcedLexerInput<'src, S> = WithContext<SourcedLexerSpan<'src, S>, LexerInput<'src>>;
-type SpannedLexerOutput<'src, S> = Vec<(Token<'src>, SourcedLexerSpan<'src, S>)>;
+type SpannedLexerOutput<'src, S> = Vec<(Token, SourcedLexerSpan<'src, S>)>;
 type LexerExtra<'src, S> = extra::Full<Rich<'src, char, SourcedLexerSpan<'src, S>>, (), ()>;
 
 pub fn lexer<'src, S: SourceId + 'src>(
 ) -> impl Parser<'src, SourcedLexerInput<'src, S>, SpannedLexerOutput<'src, S>, LexerExtra<'src, S>>
 {
+    // TODO: add labels where appropriate
+    // TODO: think more about error handling: in partucular the char/string delimiters
+
     // WACC identifiers are C-style, so we can use the default `text::ident` parser
-    let ident = text::ident().map(|id| Token::Ident(id));
+    let ident = text::ident()
+        .map(ArcIntern::from)
+        .map(|id| Token::Ident(id));
 
     // copy the Regex pattern found in the WACC spec verbatim
     let int_liter = regex("[\\+-]?[0-9]+")
@@ -176,7 +181,8 @@ pub fn lexer<'src, S: SourceId + 'src>(
         any().filter(char::normal_wacc_char),
         just('\\')
             .ignore_then(any())
-            .filter(char::escaped_wacc_char),
+            .filter(char::escaped_wacc_char)
+            .map(|c| c.lookup_escaped_wacc_char().unwrap()),
     ));
 
     // character literal parser
