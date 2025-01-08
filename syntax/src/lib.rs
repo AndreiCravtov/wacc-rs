@@ -1,7 +1,6 @@
 extern crate core;
 
-mod SourceId;
-mod span;
+mod source;
 pub mod token;
 
 pub(crate) mod private {
