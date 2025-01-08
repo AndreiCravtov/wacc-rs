@@ -1,13 +1,10 @@
 extern crate core;
 
-pub mod ast;
-pub mod parser;
-pub mod shared;
-pub mod spanned;
+mod SourceId;
+mod span;
 pub mod token;
 
 pub(crate) mod private {
-
     // sealed traits support
     pub trait Sealed {}
     impl<T> Sealed for T {}
