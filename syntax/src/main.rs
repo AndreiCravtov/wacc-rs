@@ -12,9 +12,7 @@ const TEST_EXPR: &str = r#"
 (foo == bar[23][3234 + ord - chr flll][34][234]) * len - ord ("some string literal" - chr - +2341) >= 23 == '\\'
 "#;
 
-const TEST_TYPE: &str = r#"
-pair(int, pair(pair, string)[][][])[][]
-"#;
+const TEST_TYPE: &str = r#"pair(int, pair(pair, string)[][][])[][]"#;
 
 const TEST_PROGRAM: &str = r#"
 # The program reads n (number of integers), then n integers. After each input, 

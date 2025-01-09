@@ -196,31 +196,48 @@ where
         // handle left-recursion by default (i.e. it will recurse infinitely) so we need to use
         // memoization in order to prevent this and allow correct left-recursive grammar parsing
         let array_type = r#type
-            .then_ignore(group((
-                just(Token::Open(Delim::Bracket)),
-                just(Token::Close(Delim::Bracket)),
-            )))
-            .map(ast::ArrayType::new)
+            .foldl_with(
+                // here we have to try and match on zero-or-more `[]` occurrences; its the only
+                // way to get the parser to consume the array-related brackets properly;
+                // setting a minimum with `at_least(1)` makes it not work for some reason
+                group((
+                    just(Token::Open(Delim::Bracket)),
+                    just(Token::Close(Delim::Bracket)),
+                ))
+                .ignored()
+                .repeated(),
+                |ty, _, extra| {
+                    ast::Type::ArrayType(SourcedNode::new(ast::ArrayType::new(ty), extra.span()))
+                },
+            )
+            // once we collected any potential array-types in full, we should fail the parsing
+            // route if there weren't any actual array-types; this should never ACTUALLY cause
+            // errors at the end, it's just a somewhat hacky way to do parser control-flow
+            .try_map(|ty, span| match ty {
+                ast::Type::ArrayType(ty) => Ok(ty.into_inner()),
+                _ => Err(Rich::custom(
+                    span,
+                    format!("The type `{:?}` is not an array-type", ty),
+                )),
+            })
             .sn()
-            .labelled("<array-type>")
-            .memoized();
+            .memoized()
+            .labelled("<array-type>");
 
         // pair-element type parser
         let pair_elem_type = choice((
-            base_type.clone().map(ast::PairElemType::BaseType),
             array_type.clone().map(ast::PairElemType::ArrayType),
+            base_type.clone().map(ast::PairElemType::BaseType),
             just(Token::Pair).to_span().map(ast::PairElemType::Pair),
         ))
         .labelled("<pair-elem-type>");
         let pair_type = just(Token::Pair)
-            .ignore_then(
-                group((
-                    pair_elem_type.clone().then_ignore(just(Token::Comma)),
-                    pair_elem_type,
-                ))
-                .map_group(ast::Type::PairType)
-                .delim_by(Delim::Paren),
-            )
+            .ignore_then(just(Token::Open(Delim::Paren)))
+            .ignore_then(pair_elem_type.clone())
+            .then_ignore(just(Token::Comma))
+            .then(pair_elem_type)
+            .then_ignore(just(Token::Close(Delim::Paren)))
+            .map(|(l, r)| ast::Type::PairType(l, r))
             .labelled("<pair-type>");
 
         // a type is either a base type, array type, or pair type;
@@ -242,6 +259,40 @@ where
 
         r#type
     })
+}
+
+#[test]
+fn left_recursive() {
+    use chumsky::prelude::*;
+
+    fn parser<'src>(
+    ) -> impl Parser<'src, &'src str, String, extra::Err<Rich<'src, char, SimpleSpan>>> {
+        recursive(|expr| {
+            let atom = text::ident().map(|s| String::from(s));
+
+            let sum = expr
+                .map_with(|e, extra| (e, extra.span()))
+                .foldl(
+                    just('!').to_span().repeated().at_least(1),
+                    |(expr, old_span): (String, SimpleSpan), excl_span: SimpleSpan| {
+                        (
+                            format!("({}~{})!", expr, old_span),
+                            (old_span.start..excl_span.end).into(),
+                        )
+                    },
+                )
+                .map(|(e, _)| e)
+                .memoized();
+
+            sum.or(atom)
+        })
+        .then_ignore(end())
+    }
+
+    assert_eq!(
+        parser().parse("a!!!!!!!!!!").into_result().unwrap(),
+        "((((((((((a~0..1)!~0..2)!~0..3)!~0..4)!~0..5)!~0..6)!~0..7)!~0..8)!~0..9)!~0..10)!"
+    );
 }
 
 // pub fn type_parser() -> impl Parser<Token, Spanned<Type>, Error = Simple<Token>> + Clone {

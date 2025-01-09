@@ -142,6 +142,14 @@ where
     }
 
     #[inline]
+    pub fn map_span(self, f: impl Fn(SpanT) -> SpanT) -> Self {
+        Self {
+            span: f(self.span),
+            ..self
+        }
+    }
+
+    #[inline]
     fn start(&self) -> usize {
         self.span.start()
     }

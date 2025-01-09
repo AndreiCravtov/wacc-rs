@@ -141,6 +141,20 @@ pub enum Type {
     Error(SourcedSpan),
 }
 
+impl Type {
+    pub fn is_array_type(&self) -> bool {
+        matches!(self, Type::ArrayType(_))
+    }
+
+    /// Unsafely unwraps array types
+    pub unsafe fn into_array_type_unchecked(self) -> SN<ArrayType> {
+        match self {
+            Type::ArrayType(ty) => ty,
+            _ => unreachable!("Cannot convert {:?} into `ArrayType`", self),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum BaseType {
     Int,
