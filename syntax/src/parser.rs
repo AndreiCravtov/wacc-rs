@@ -232,12 +232,16 @@ where
         ))
         .labelled("<pair-elem-type>");
         let pair_type = just(Token::Pair)
-            .ignore_then(just(Token::Open(Delim::Paren)))
-            .ignore_then(pair_elem_type.clone())
-            .then_ignore(just(Token::Comma))
-            .then(pair_elem_type)
-            .then_ignore(just(Token::Close(Delim::Paren)))
-            .map(|(l, r)| ast::Type::PairType(l, r))
+            .ignore_then(
+                group((
+                    pair_elem_type.clone().then_ignore(just(Token::Comma)),
+                    pair_elem_type,
+                ))
+                .map_group(ast::Type::PairType)
+                .delim_by(Delim::Paren)
+                // Attempt to recover anything that looks like a (parenthesised) pair type but contains errors
+                .recover_with_delim(Delim::Paren, ast::Type::Error),
+            )
             .labelled("<pair-type>");
 
         // a type is either a base type, array type, or pair type;
@@ -250,49 +254,8 @@ where
         ))
         .labelled("<type>");
 
-        // // Perform simplistic error recovery on types
-        // let r#type = r#type
-        //     // Attempt to recover anything that looks like a (parenthesised) pair type but contains errors
-        //     .recover_with_delim(Delim::Paren, ast::Type::Error)
-        //     // Attempt to recover anything that looks like an array-type but contains errors
-        //     .recover_with_delim(Delim::Bracket, ast::Type::Error);
-
         r#type
     })
-}
-
-#[test]
-fn left_recursive() {
-    use chumsky::prelude::*;
-
-    fn parser<'src>(
-    ) -> impl Parser<'src, &'src str, String, extra::Err<Rich<'src, char, SimpleSpan>>> {
-        recursive(|expr| {
-            let atom = text::ident().map(|s| String::from(s));
-
-            let sum = expr
-                .map_with(|e, extra| (e, extra.span()))
-                .foldl(
-                    just('!').to_span().repeated().at_least(1),
-                    |(expr, old_span): (String, SimpleSpan), excl_span: SimpleSpan| {
-                        (
-                            format!("({}~{})!", expr, old_span),
-                            (old_span.start..excl_span.end).into(),
-                        )
-                    },
-                )
-                .map(|(e, _)| e)
-                .memoized();
-
-            sum.or(atom)
-        })
-        .then_ignore(end())
-    }
-
-    assert_eq!(
-        parser().parse("a!!!!!!!!!!").into_result().unwrap(),
-        "((((((((((a~0..1)!~0..2)!~0..3)!~0..4)!~0..5)!~0..6)!~0..7)!~0..8)!~0..9)!~0..10)!"
-    );
 }
 
 // pub fn type_parser() -> impl Parser<Token, Spanned<Type>, Error = Simple<Token>> + Clone {

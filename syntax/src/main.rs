@@ -114,9 +114,7 @@ fn main() {
         let spanned_tokens = tokens.as_slice().map(eoi_span, |(t, s)| (t, s));
         let (parsed, parse_errs) = type_parser().parse(spanned_tokens).into_output_errors();
 
-        if let Some(parsed) = parsed {
-            println!("{:?}", parsed);
-        }
+        println!("{:?}", parsed);
 
         for e in parse_errs {
             let span: SourcedSpan = e.span().clone();
