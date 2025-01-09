@@ -13,6 +13,13 @@ pub struct Program {
     pub body: SN<StatChain>,
 }
 
+impl Program {
+    #[inline]
+    pub fn new(funcs: Box<[Func]>, body: SN<StatChain>) -> Self {
+        Self { funcs, body }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Func {
     pub return_type: SN<Type>,
@@ -21,10 +28,36 @@ pub struct Func {
     pub body: SN<FuncBody>,
 }
 
+impl Func {
+    #[inline]
+    pub fn new(
+        return_type: SN<Type>,
+        name: SN<Ident>,
+        params: Box<[FuncParam]>,
+        body: SN<FuncBody>,
+    ) -> Self {
+        Self {
+            return_type,
+            name,
+            params,
+            body,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct FuncParam {
     pub r#type: SN<Type>,
     pub name: SN<Ident>,
+}
+
+impl FuncParam {
+    #[inline]
+    pub fn new(r#type: SN<Type>, name: SN<Ident>) -> Self {
+        println!("TODO: implement actual checks here!!!");
+        //TODO: above
+        Self { r#type, name }
+    }
 }
 
 /// Wrapper around [StatChain] with the additional constraint that every execution path
@@ -32,6 +65,13 @@ pub struct FuncParam {
 #[derive(Clone, Debug)]
 #[repr(transparent)]
 pub struct FuncBody(StatChain);
+
+impl FuncBody {
+    #[inline]
+    pub fn new(body: StatChain) -> Self {
+        Self(body)
+    }
+}
 
 #[derive(Clone, Debug)]
 #[repr(transparent)]
@@ -43,35 +83,31 @@ pub struct EmptyStatVecError;
 
 impl StatChain {
     #[inline]
-    fn new(stat: Stat, span: SourcedSpan) -> Self {
-        Self(NonemptyArray::singleton(SN::new(stat, span)))
+    fn singleton(spanned_stat: SN<Stat>) -> Self {
+        Self(NonemptyArray::singleton(spanned_stat))
     }
 
-    pub fn try_new(spanned_stats: Vec<(Stat, SourcedSpan)>) -> Result<Self, EmptyStatVecError> {
-        match NonemptyArray::try_from_boxed_slice(
-            spanned_stats
-                .iter()
-                .map(|(stat, span)| SN::new(stat.clone(), span.clone()))
-                .collect::<Box<[_]>>(),
-        ) {
+    #[inline]
+    pub fn try_new(spanned_stats: Vec<SN<Stat>>) -> Result<Self, EmptyStatVecError> {
+        match NonemptyArray::try_from_boxed_slice(spanned_stats) {
             Ok(s) => Ok(Self(s)),
             Err(_) => Err(EmptyStatVecError),
         }
     }
 }
 
-impl From<(Stat, SourcedSpan)> for StatChain {
+impl From<SN<Stat>> for StatChain {
     #[inline]
-    fn from((stat, span): (Stat, SourcedSpan)) -> Self {
-        StatChain::new(stat, span)
+    fn from(spanned_stat: SN<Stat>) -> Self {
+        StatChain::singleton(spanned_stat)
     }
 }
 
-impl TryFrom<Vec<(Stat, SourcedSpan)>> for StatChain {
+impl TryFrom<Vec<SN<Stat>>> for StatChain {
     type Error = EmptyStatVecError;
 
     #[inline]
-    fn try_from(spanned_stats: Vec<(Stat, SourcedSpan)>) -> Result<Self, Self::Error> {
+    fn try_from(spanned_stats: Vec<SN<Stat>>) -> Result<Self, Self::Error> {
         StatChain::try_new(spanned_stats)
     }
 }
@@ -106,6 +142,36 @@ pub enum Stat {
     Scoped(SN<StatChain>),
 }
 
+impl Stat {
+    #[inline]
+    pub fn var_definition(r#type: SN<Type>, name: SN<Ident>, rhs: AssignRhs) -> Self {
+        Self::VarDefinition { r#type, name, rhs }
+    }
+
+    #[inline]
+    pub fn assignment(lhs: AssignLhs, rhs: AssignRhs) -> Self {
+        Self::Assignment { lhs, rhs }
+    }
+
+    #[inline]
+    pub fn if_then_else(
+        if_cond: SN<Expr>,
+        then_body: SN<StatChain>,
+        else_body: SN<StatChain>,
+    ) -> Self {
+        Self::IfThenElse {
+            if_cond,
+            then_body,
+            else_body,
+        }
+    }
+
+    #[inline]
+    pub fn while_do(while_cond: SN<Expr>, body: SN<StatChain>) -> Self {
+        Self::WhileDo { while_cond, body }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum AssignLhs {
     Ident(SN<Ident>),
@@ -123,6 +189,13 @@ pub enum AssignRhs {
         func_name: SN<Ident>,
         args: Box<[SN<Expr>]>,
     },
+}
+
+impl AssignRhs {
+    #[inline]
+    pub fn call(func_name: SN<Ident>, args: Box<[SN<Expr>]>) -> Self {
+        Self::Call { func_name, args }
+    }
 }
 
 #[derive(Clone, Debug)]
