@@ -1,26 +1,66 @@
-use crate::source::{SourceId, SourceIdSpan, WithSourceId};
-use crate::CharExt;
-use chumsky::error::Rich;
-use chumsky::input::{StrInput, WithContext};
-use chumsky::prelude::{any, choice, end, just, regex, skip_then_retry_until, Input};
-use chumsky::{extra, text, IterParser, Parser};
+use crate::token::Delim::{Bracket, Paren};
+use crate::{alias, ast, ext::CharExt};
+use chumsky::{error::Rich, input::StrInput, prelude::*, text, IterParser, Parser};
 use internment::ArcIntern;
 use std::fmt;
-use std::fmt::Formatter;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
 pub enum Delim {
-    Paren,
-    Bracket,
+    Paren = 0,
+    Bracket = 1,
+}
+
+impl Delim {
+    /// The current number of variants.
+    const NUM_VARIANTS: usize = 2;
+    /// The current variants.
+    const VARIANTS: [Self; Self::NUM_VARIANTS] = [Paren, Bracket];
+    /// Placeholder element, useful for allocating arrays.
+    const PLACEHOLDER: Self = Paren;
+
+    /// A copy of the current variants.
+    #[inline]
+    pub const fn variants() -> [Self; Self::NUM_VARIANTS] {
+        Self::VARIANTS
+    }
+
+    /// A reference to the current variants.
+    #[inline]
+    pub const fn variants_ref() -> &'static [Self; Self::NUM_VARIANTS] {
+        &Self::VARIANTS
+    }
+
+    pub const fn variants_except(self) -> [Self; Self::NUM_VARIANTS - 1] {
+        // allocate output array
+        let mut others: [Self; Self::NUM_VARIANTS - 1] = [Self::PLACEHOLDER];
+
+        // for loops not allowed in const-rust
+        let mut i = 0;
+        let mut j = 0;
+        while i < Self::NUM_VARIANTS {
+            let delim = Self::VARIANTS[i];
+
+            // `Eq` trait calls not allowed in const-rust,
+            // have to cast to u8-repr and compare that instead
+            if self as u8 != delim as u8 {
+                others[j] = delim;
+                j += 1;
+            }
+            i += 1
+        }
+
+        others
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Token {
     // literals
-    Ident(ArcIntern<str>),
+    Ident(ast::Ident),
     IntLiter(i32),
     CharLiter(char),
-    StringLiter(ArcIntern<str>),
+    StrLiter(ArcIntern<str>),
 
     // delimiter symbols
     Open(Delim),
@@ -81,12 +121,12 @@ pub enum Token {
 }
 
 impl fmt::Display for Token {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Token::Ident(s) => write!(f, "{}", s),
             Token::IntLiter(i) => write!(f, "{}", i),
             Token::CharLiter(c) => write!(f, "{}", c), // TODO: unescape the character literal, i.e. newline -> '\c'
-            Token::StringLiter(s) => write!(f, "{}", s), // TODO: unescape the string literal, as with char literal
+            Token::StrLiter(s) => write!(f, "{}", s), // TODO: unescape the string literal, as with char literal
             Token::Open(d) => match d {
                 Delim::Paren => write!(f, "("),
                 Delim::Bracket => write!(f, "["),
@@ -148,26 +188,16 @@ impl fmt::Display for Token {
     }
 }
 
-// convenience type-aliases
-type LexerInput<'src> = &'src str;
-type SourcedLexerSpan<'src, S> = WithSourceId<S, <LexerInput<'src> as Input<'src>>::Span>;
-type SourcedLexerInput<'src, S> = WithContext<SourcedLexerSpan<'src, S>, LexerInput<'src>>;
-type SpannedLexerOutput<'src, S> = Vec<(Token, SourcedLexerSpan<'src, S>)>;
-type LexerExtra<'src, S> = extra::Full<Rich<'src, char, SourcedLexerSpan<'src, S>>, (), ()>;
-
-pub fn lexer<'src, S, I>(
-) -> impl Parser<'src, I, Vec<(Token, I::Span)>, extra::Full<Rich<'src, I::Token, I::Span>, (), ()>>
+pub fn lexer<'src, I>() -> impl alias::Parser<'src, I, Vec<(Token, I::Span)>>
 where
-    S: SourceId + 'src,
     I: StrInput<'src, Token = char, Slice = &'src str>,
-    I::Span: SourceIdSpan,
 {
     // TODO: add labels where appropriate
     // TODO: think more about error handling: in partucular the char/string delimiters
 
     // WACC identifiers are C-style, so we can use the default `text::ident` parser
     let ident = text::ident()
-        .map(ArcIntern::from)
+        .map(ast::Ident::from_str)
         .map(|id| Token::Ident(id));
 
     // copy the Regex pattern found in the WACC spec verbatim
@@ -197,13 +227,13 @@ where
         .map(Token::CharLiter);
 
     // string literal parser
-    let string_delim = just('"');
-    let string_liter = character
+    let str_delim = just('"');
+    let str_liter = character
         .repeated()
         .collect::<String>()
-        .delimited_by(string_delim, string_delim)
+        .delimited_by(str_delim, str_delim)
         .map(ArcIntern::from)
-        .map(Token::StringLiter);
+        .map(Token::StrLiter);
 
     let delim_symbols = choice((
         just('(').to(Token::Open(Delim::Paren)),
@@ -274,7 +304,7 @@ where
         // e.g. the literal +14343 should take precedence over the plus symbol '+'
         int_liter,
         char_liter,
-        string_liter,
+        str_liter,
         // parse symbols
         delim_symbols,
         other_symbols,

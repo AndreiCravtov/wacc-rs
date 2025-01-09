@@ -1,11 +1,12 @@
 use crate::node::Node;
 use ariadne::Span as AriadneSpan;
-use chumsky::prelude::SimpleSpan;
-use chumsky::span::Span as ChumskySpan;
+use chumsky::{prelude::SimpleSpan, span::Span as ChumskySpan};
 use internment::Intern;
-use std::fmt;
-use std::ops::{Deref, Range};
-use std::path::Path;
+use std::{
+    fmt,
+    ops::{Deref, Range},
+    path::Path,
+};
 
 /// Trait for identifiers which uniquely refer to a source. In the simplest case,
 /// it is just the fully qualified file path.
@@ -32,7 +33,7 @@ impl StrSourceId {
     }
 
     #[inline]
-    pub fn from_boxed_str(s: Box<str>) -> StrSourceId {
+    pub fn from_boxed_str(s: Box<str>) -> Self {
         StrSourceId(Intern::from(s))
     }
 

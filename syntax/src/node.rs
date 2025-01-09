@@ -1,6 +1,8 @@
-use std::cmp::Ordering;
-use std::fmt;
-use std::ops::{Deref, DerefMut};
+use std::{
+    cmp::Ordering,
+    fmt,
+    ops::{Deref, DerefMut},
+};
 
 /// A node allocates [T] on the heap and also contains additional context [C] about it.
 #[derive(Clone)]
@@ -108,12 +110,12 @@ impl<T: Ord, C> Ord for Node<T, C> {
 
 impl<T: fmt::Debug, C: fmt::Debug> fmt::Debug for Node<T, C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:#?} @ {:?}", self.inner, self.context)
+        write!(f, "{:?} ~ {:#?}", self.context, self.inner)
     }
 }
 
 impl<T: fmt::Display, C: fmt::Display> fmt::Display for Node<T, C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:#} @ {:}", self.inner, self.context)
+        write!(f, "{:} ~ {:#}", self.context, self.inner)
     }
 }

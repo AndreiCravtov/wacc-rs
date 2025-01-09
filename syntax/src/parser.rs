@@ -1,22 +1,180 @@
-use crate::ast::{Expr, Ident};
-use crate::source::SourceId;
-use crate::token::Token;
-use chumsky::error::Rich;
-use chumsky::input::{BorrowInput, Input};
-use chumsky::span::SimpleSpan;
-use chumsky::{extra, select_ref, Parser};
+use crate::ext::{DelimByParserExt, RecoverWithDelimParserExt, SourcedNodeParserExt};
+use crate::nonempty::NonemptyArray;
+use crate::source::{SourcedNode, SourcedSpan};
+use crate::token::Delim;
+use crate::{alias, ast, token::Token};
+use chumsky::extra::ParserExtra;
+use chumsky::input::{MapExtra, ValueInput};
+use chumsky::pratt::{infix, left, prefix};
+use chumsky::{input::BorrowInput, prelude::*, select_ref, Parser};
 
-// convenience type-aliases
-
-pub fn expr_parser<'src, S, I>(
-) -> impl Parser<'src, I, Expr, extra::Full<Rich<'src, I::Token, I::Span>, (), ()>> + Clone
+pub fn ident_parser<'src, I>() -> impl alias::Parser<'src, I, ast::Ident>
 where
-    S: SourceId + 'src,
-    I: BorrowInput<'src, Token = Token, Span = SimpleSpan>,
+    I: BorrowInput<'src, Token = Token>,
 {
-    let ident = select_ref! { Token::Ident(x) => x.clone() };
+    // identifiers can be extracted directly from `Ident` tokens, copying
+    // an internal atomic reference to an interned identifier string
+    (select_ref! { Token::Ident(x) => x.clone() }).labelled("<ident>")
+}
 
-    ident.map(|i| Expr::Ident(Ident(i.clone())))
+pub fn liter_parser<'src, I>() -> impl alias::Parser<'src, I, ast::Liter>
+where
+    I: BorrowInput<'src, Token = Token>,
+{
+    // some literals can be extracted from their corresponding tokens
+    let int_liter =
+        select_ref! { Token::IntLiter(x) => ast::Liter::IntLiter(*x) }.labelled("<int-liter>");
+    let char_liter =
+        select_ref! { Token::CharLiter(x) => ast::Liter::CharLiter(*x) }.labelled("<char-liter>");
+    let str_liter = select_ref! { Token::StrLiter(x) => ast::Liter::StrLiter(x.clone()) }
+        .labelled("<str-liter>");
+
+    // some literals can be created from keywords
+    let bool_liter = choice((
+        just(Token::True).to(ast::Liter::BoolLiter(true)),
+        just(Token::False).to(ast::Liter::BoolLiter(false)),
+    ))
+    .labelled("<bool-liter>");
+    let pair_liter = just(Token::Null)
+        .to(ast::Liter::PairLiter)
+        .labelled("<pair-liter>");
+
+    let token = choice((int_liter, char_liter, str_liter, bool_liter, pair_liter));
+    token
+}
+
+pub fn array_elem_parser<'src, I, Ident, Expr>(
+    ident: Ident,
+    expr: Expr,
+) -> impl alias::Parser<'src, I, ast::ArrayElem>
+where
+    I: BorrowInput<'src, Token = Token, Span = SourcedSpan>,
+    Ident: alias::Parser<'src, I, ast::Ident>,
+    Expr: alias::Parser<'src, I, ast::Expr>,
+{
+    let array_elem_indices = expr
+        .delim_by(Delim::Bracket)
+        .sn()
+        .repeated()
+        .at_least(1)
+        .collect::<Vec<_>>()
+        .map(NonemptyArray::try_from_boxed_slice)
+        .map(Result::unwrap);
+    let array_elem = group((ident.sn(), array_elem_indices))
+        .map_group(ast::ArrayElem::new)
+        .labelled("<array-elem>");
+
+    array_elem
+}
+
+pub fn expr_parser<'src, I>() -> impl alias::Parser<'src, I, ast::Expr>
+where
+    I: BorrowInput<'src, Token = Token, Span = SourcedSpan> + ValueInput<'src>,
+{
+    recursive(|expr| {
+        let ident = ident_parser();
+        let liter = liter_parser();
+        let array_elem = array_elem_parser(ident.clone(), expr.clone());
+
+        // parse parenthesized expressions
+        let paren_expr = expr.delim_by(Delim::Paren).sn();
+
+        // 'Atoms' are expressions that contain no ambiguity
+        let atom = choice((
+            liter.map(ast::Expr::Liter),
+            // array elements begin with identifiers, so
+            // give them precedence over identifiers
+            array_elem.map(ast::Expr::ArrayElem),
+            ident.map(ast::Expr::Ident),
+            paren_expr.map(ast::Expr::Paren),
+        ));
+
+        // Perform simplistic error recovery on Atom expressions
+        let atom = atom
+            // Attempt to recover anything that looks like a parenthesised expression but contains errors
+            .recover_with_delim(Delim::Paren, ast::Expr::Error)
+            // Attempt to recover anything that looks like an array-element but contains errors
+            .recover_with_delim(Delim::Bracket, ast::Expr::Error);
+
+        // unary and binary operator parsers
+        let unary_oper = choice((
+            just(Token::Bang).to(ast::UnaryOper::Not),
+            just(Token::Minus).to(ast::UnaryOper::Minus),
+            just(Token::Len).to(ast::UnaryOper::Len),
+            just(Token::Ord).to(ast::UnaryOper::Ord),
+            just(Token::Chr).to(ast::UnaryOper::Chr),
+        ))
+        .sn()
+        .labelled("<unary-oper>");
+        let product_oper = choice((
+            just(Token::Star).to(ast::BinaryOper::Mul),
+            just(Token::ForwardSlash).to(ast::BinaryOper::Div),
+            just(Token::Percent).to(ast::BinaryOper::Mod),
+        ))
+        .sn()
+        .labelled("<binary-oper>");
+        let sum_oper = choice((
+            just(Token::Plus).to(ast::BinaryOper::Add),
+            just(Token::Minus).to(ast::BinaryOper::Sub),
+        ))
+        .sn()
+        .labelled("<binary-oper>");
+        let arith_cmp_oper = choice((
+            just(Token::Lte).to(ast::BinaryOper::Lte),
+            just(Token::Lt).to(ast::BinaryOper::Lt),
+            just(Token::Gte).to(ast::BinaryOper::Gte),
+            just(Token::Gt).to(ast::BinaryOper::Gt),
+        ))
+        .sn()
+        .labelled("<binary-oper>");
+        let eq_cmp_oper = choice((
+            just(Token::EqualsEquals).to(ast::BinaryOper::Eq),
+            just(Token::BangEquals).to(ast::BinaryOper::Neq),
+        ))
+        .sn()
+        .labelled("<binary-oper>");
+        let land_oper = just(Token::And)
+            .to(ast::BinaryOper::And)
+            .sn()
+            .labelled("<binary-oper>");
+        let lor_oper = just(Token::Or)
+            .to(ast::BinaryOper::Or)
+            .sn()
+            .labelled("<binary-oper>");
+
+        // procedure to fold PRATT patterns into binary expressions
+        let binary_fold = |lhs, op, rhs, extra: &mut MapExtra<'src, '_, I, _>| {
+            SourcedNode::new(ast::Expr::Binary(lhs, op, rhs), extra.span())
+        };
+
+        // a PRATT parser for prefix and infix operator expressions
+        let expr = atom.sn().pratt((
+            // We want unary operations to happen before any binary ones, so we need their precedence
+            // is set to be the highest. But amongst themselves the precedence is the same.
+            prefix(7, unary_oper, |op, rhs, extra| {
+                SourcedNode::new(ast::Expr::Unary(op, rhs), extra.span())
+            }),
+            // Product ops (multiply, divide, and mod) have equal precedence, and the highest
+            // binary operator precedence overall
+            infix(left(6), product_oper, binary_fold),
+            // Sum ops (add and subtract) have equal precedence, just below the precedence
+            // of product ops
+            infix(left(5), sum_oper, binary_fold),
+            // Arithmetic comparisons (<, <=, >, >=) have equal precedence, just below the
+            // precedence of sum ops
+            infix(left(4), arith_cmp_oper, binary_fold),
+            // Equality comparisons (== and !=) have equal precedence, just below the
+            // precedence of arithmetic comparisons
+            infix(left(3), eq_cmp_oper, binary_fold),
+            // logical AND (&&) has more precedence than logical OR (||), where AND has
+            // precedence just below that of equality comparisons
+            infix(left(2), land_oper, binary_fold),
+            infix(left(1), lor_oper, binary_fold),
+        ));
+
+        // as of now, no other type of expression exists
+        expr.map(SourcedNode::into_inner) // TODO: this removes span from output. If this is not desirable, undo this line
+    })
 }
 
 // pub fn expr_parser() -> impl Parser<Token, Spanned<Expr>, Error = Simple<Token>> + Clone {
