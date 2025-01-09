@@ -148,7 +148,7 @@ where
 
         // a PRATT parser for prefix and infix operator expressions
         let expr = atom.sn().pratt((
-            // We want unary operations to happen before any binary ones, so we need their precedence
+            // We want unary operations to happen before any binary ones, so their precedence
             // is set to be the highest. But amongst themselves the precedence is the same.
             prefix(7, unary_oper, |op, rhs, extra| {
                 SourcedNode::new(ast::Expr::Unary(op, rhs), extra.span())
@@ -196,9 +196,9 @@ where
         // memoization in order to prevent this and allow correct left-recursive grammar parsing
         let array_type = r#type
             .foldl_with(
-                // here we have to try and match on zero-or-more `[]` occurrences; its the only
+                // here we have to try and match zero-or-more occurrences of `[]`; it's the only
                 // way to get the parser to consume the array-related brackets properly;
-                // setting a minimum with `at_least(1)` makes it not work for some reason
+                // setting a minimum with `at_least(1)` makes it not work for some reason..?
                 group((
                     just(Token::Open(Delim::Bracket)),
                     just(Token::Close(Delim::Bracket)),
@@ -223,7 +223,9 @@ where
             .memoized()
             .labelled("<array-type>");
 
-        // pair-element type parser
+        // pair-element type parser;
+        // an array type and all other types look the same until the very last, so we should
+        // give precedence to array types to make sure they are not incorrectly missed
         let pair_elem_type = choice((
             array_type.clone().map(ast::PairElemType::ArrayType),
             base_type.clone().map(ast::PairElemType::BaseType),
@@ -272,9 +274,7 @@ where
     let expr = expr.sn();
     let r#type = type_parser().sn();
 
-    // skip parser
-    let skip = just(Token::Skip).to(ast::Stat::Skip);
-
+    // a sequence of expressions separated by commas
     let expr_sequence = expr
         .clone()
         .separated_by(just(Token::Comma))
@@ -365,7 +365,7 @@ where
     // statement parser
     // TODO: figure out labels and error recovery
     let stat = choice((
-        skip,
+        just(Token::Skip).to(ast::Stat::Skip),
         variable_definition,
         assignment,
         just(Token::Read)
