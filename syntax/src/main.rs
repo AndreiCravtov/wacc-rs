@@ -1,13 +1,12 @@
+use chumsky::error::RichReason;
 use chumsky::input::WithContext;
 use chumsky::prelude::Input;
 use chumsky::Parser;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
-use wacc_syntax::parser::expr_parser;
+use wacc_syntax::parser::type_parser;
 use wacc_syntax::source::{SourcedSpan, StrSourceId};
 use wacc_syntax::token::lexer;
-
-const TEST_EXPR_SCOPE: &str = r#"------ ord 1234 + chr 234 == foobar"#;
 
 const TEST_EXPR: &str = r#"
 (foo == bar[23][3234 + ord - chr flll][34][234]) * len - ord ("some string literal" - chr - +2341) >= 23 == '\\'
@@ -101,7 +100,7 @@ end
 "#;
 
 fn main() {
-    let source = TEST_EXPR_SCOPE;
+    let source = TEST_TYPE;
     let source_id = StrSourceId::repl();
     let eoi_span = SourcedSpan::new(source_id, (source.len()..source.len()).into());
 
@@ -115,15 +114,23 @@ fn main() {
 
         // attach the span of each token to it before parsing, so it is not forgotten
         let spanned_tokens = tokens.as_slice().map(eoi_span, |(t, s)| (t, s));
-        let (parsed, parse_errs) = expr_parser().parse(spanned_tokens).into_output_errors();
+        let (parsed, parse_errs) = type_parser().parse(spanned_tokens).into_output_errors();
 
         if let Some(parsed) = parsed {
             println!("{:?}", parsed);
         }
 
-        parse_errs
-            .into_iter()
-            .for_each(|e| println!("Parse error: {}", e))
+        for e in parse_errs {
+            let span: SourcedSpan = e.span().clone();
+            let reason: RichReason<_> = e.reason().clone();
+            let contexts = e.contexts();
+            println!("Parse error at {:?}", span);
+            println!("Reason:\n{:#?}", reason);
+            println!("Contexts:\n");
+            for context in contexts {
+                println!("-> {:#?}", context);
+            }
+        }
     }
 
     parse_errs

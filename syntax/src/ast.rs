@@ -135,7 +135,10 @@ pub enum PairElem {
 pub enum Type {
     BaseType(SN<BaseType>),
     ArrayType(SN<ArrayType>),
-    PairType(SN<PairElemType>, SN<PairElemType>),
+    PairType(PairElemType, PairElemType),
+
+    // Generated only by parser errors.
+    Error(SourcedSpan),
 }
 
 #[derive(Clone, Debug)]
@@ -148,14 +151,21 @@ pub enum BaseType {
 
 #[derive(Clone, Debug)]
 pub struct ArrayType {
-    pub elem_type: SN<Type>,
+    pub elem_type: Type,
+}
+
+impl ArrayType {
+    #[inline]
+    pub fn new(elem_type: Type) -> Self {
+        Self { elem_type }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub enum PairElemType {
     BaseType(SN<BaseType>),
     ArrayType(SN<ArrayType>),
-    Pair,
+    Pair(SourcedSpan),
 }
 
 #[derive(Clone, Debug)]

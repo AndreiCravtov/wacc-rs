@@ -177,236 +177,73 @@ where
     })
 }
 
-// pub fn expr_parser() -> impl Parser<Token, Spanned<Expr>, Error = Simple<Token>> + Clone {
-//     recursive(|expr: Recursive<'_, Token, Spanned<Expr>, Simple<Token>>| {
-//         // identifiers can be parsed directly from `Ident` tokens
-//         let ident = select! { Token::Ident(s) => Ident(s) }.labelled("<ident>");
-//
-//         // we need to check that our integer literals fit within 32-bits as specified by the WACC-language Spec
-//         let int_liter = filter_map(move |span, t| match t {
-//             Token::IntLiter(s) => match s.parse::<i32>() {
-//                 Ok(i) => Ok(Expr::IntLiter(i)),
-//                 Err(_) => Err(Simple::custom(
-//                     span,
-//                     format!("The integer literal '{}' does not fit within 32 bytes", s),
-//                 )),
-//             },
-//             _ => Err(Simple::expected_input_found(span, None, Some(t))),
-//         })
-//         .labelled("<int-liter>");
-//
-//         // boolean literals can be parsed directly from keywords
-//         let bool_liter = choice((
-//             just(Token::Keyword(Keyword::True)).to(Expr::BoolLiter(true)),
-//             just(Token::Keyword(Keyword::False)).to(Expr::BoolLiter(false)),
-//         ))
-//         .labelled("<bool-liter>");
-//
-//         // characters have to be further processed based on if they are
-//         // normal or escaped characters
-//         let char_liter = select! { Token::CharLiter(s) =>
-//             Expr::CharLiter(if s.len() == 1 {
-//                 // length-one string implies the character is a normal WACC character
-//                 let c: char = s.chars().next().unwrap();
-//                 assert!(c.normal_wacc_char());
-//                 c
-//             } else {
-//                 // length-two string implies escaped WACC character
-//                 assert_eq!(s.len(), 2);
-//                 let mut char_iter = s.chars();
-//                 assert_eq!(char_iter.next().unwrap(), '\\');
-//                 let c: char = char_iter.next().unwrap();
-//                 // map each escaped-character to what it actually means
-//                 c.lookup_escaped_wacc_char().unwrap()
-//             })
-//         }
-//         .labelled("<char-liter>");
-//
-//         // strings also have to be further processed, paring each `\`-escaped character appropriately
-//         let str_liter = select! { Token::StrLiter(s) => {
-//             let mut s_chars = s.chars();
-//             let mut processed_str: String = String::new();
-//
-//             // build up parsed string by walking through character iterator and testing
-//             // for any `\` characters to see if we need to lookup WACC-escaped characters
-//             while let Some(c) = s_chars.next() {
-//                 // handle escaped-character, no panics should happen here
-//                 // if the lexing stage contains no logical errors
-//                 if (c == '\\') {
-//                     processed_str.push(s_chars.next().unwrap().lookup_escaped_wacc_char().unwrap());
-//                 } else {
-//                     processed_str.push(c);
-//                 }
-//             }
-//
-//             Expr::StrLiter(SharedString::from(processed_str))
-//         } }
-//         .labelled("<str-liter>");
-//
-//         // Pair literals can only be `null` and `null` can only mean pair literals
-//         let pair_liter =
-//             select! { Token::Keyword(Keyword::Null) => Expr::PairLiter }.labelled("<pair-liter>");
-//
-//         // base-case expression parser, i.e. the non-recursive cases
-//         let base_expr = choice((int_liter, bool_liter, char_liter, str_liter, pair_liter));
-//
-//         // array element parser
-//         let array_elem_index = expr.clone().delimited_by(
-//             just(Token::Symbol(Symbol::OpenBracket)),
-//             just(Token::Symbol(Symbol::CloseBracket)),
-//         );
-//         let array_elem = ident
-//             .then(array_elem_index.clone())
-//             .then(array_elem_index.repeated())
-//             .map(|((array_name, first_index), other_indices)| {
-//                 Expr::ArrayElem(ArrayElem {
-//                     array_name,
-//                     first_index: Box::new(first_index.inner),
-//                     other_indices: other_indices.iter().map(|s| s.inner.clone()).collect(),
-//                 })
-//             })
-//             .labelled("<array-elem>");
-//
-//         // parser which resolves array-element vs. identifier ambiguity, namely:
-//         // an identifier followed by `([<expr>])+` is an array-element, and otherwise
-//         // its just an identifier
-//         let ident_and_array_elem = array_elem.or(ident.map(Expr::Ident));
-//
-//         // Parse parenthesized expressions
-//         let paren_expr = expr
-//             .clone()
-//             .delimited_by(
-//                 just(Token::Symbol(Symbol::OpenParen)),
-//                 just(Token::Symbol(Symbol::CloseParen)),
-//             )
-//             .map(|e| Expr::Paren(Box::new(e.inner)));
-//
-//         // 'Atoms' are expressions that contain no ambiguity
-//         let atom = base_expr
-//             .or(ident_and_array_elem)
-//             .or(paren_expr)
-//             .map_with_span(|e, s| Spanned::new(e, s))
-//             // Attempt to recover anything that looks like a parenthesised expression but contains errors
-//             .recover_with(nested_delimiters(
-//                 Token::Symbol(Symbol::OpenParen),
-//                 Token::Symbol(Symbol::CloseParen),
-//                 [(
-//                     Token::Symbol(Symbol::OpenBracket),
-//                     Token::Symbol(Symbol::CloseBracket),
-//                 )],
-//                 |span| Spanned::new(Expr::Error, span),
-//             ))
-//             // Attempt to recover anything that looks like an array-element but contains errors
-//             .recover_with(nested_delimiters(
-//                 Token::Symbol(Symbol::OpenBracket),
-//                 Token::Symbol(Symbol::CloseBracket),
-//                 [(
-//                     Token::Symbol(Symbol::OpenParen),
-//                     Token::Symbol(Symbol::CloseParen),
-//                 )],
-//                 |span| Spanned::new(Expr::Error, span),
-//             ));
-//
-//         // unary operators all have the same precedence, and higher than binary operators
-//         let unary_oper = choice((
-//             just(Token::Symbol(Symbol::Bang)).to(UnaryOper::Not),
-//             just(Token::Symbol(Symbol::Minus)).to(UnaryOper::Minus),
-//             just(Token::Keyword(Keyword::Len)).to(UnaryOper::Len),
-//             just(Token::Keyword(Keyword::Ord)).to(UnaryOper::Ord),
-//             just(Token::Keyword(Keyword::Chr)).to(UnaryOper::Chr),
-//         ))
-//         .labelled("<unary-oper>");
-//         let unary = unary_oper
-//             .map_with_span(|o, s| Spanned::new(o, s))
-//             .repeated()
-//             .then(atom)
-//             .foldr(|o, e| {
-//                 let span = o.start()..e.end();
-//                 Spanned::new(Expr::Unary(o.inner, Box::new(e.inner)), span)
-//             });
-//
-//         // binary operator parser implementation
-//         fn binary_op_parser<I, E, B, O>(
-//             base: B,
-//             oper: O,
-//         ) -> impl Parser<I, Spanned<Expr>, Error = E> + Clone
-//         where
-//             I: Clone,
-//             E: Error<I>,
-//             B: Parser<I, Spanned<Expr>, Error = E> + Clone,
-//             O: Parser<I, BinaryOper, Error = E> + Clone,
-//         {
-//             base.clone()
-//                 .then(oper.then(base).repeated())
-//                 .foldl(|a, (o, b)| {
-//                     let span = a.start()..b.end();
-//                     Spanned::new(Expr::Binary(Box::new(a.inner), o, Box::new(b.inner)), span)
-//                 })
-//         }
-//
-//         // Product ops (multiply, divide, and mod) have equal precedence
-//         let product = binary_op_parser(
-//             unary,
-//             choice((
-//                 just(Token::Symbol(Symbol::Star)).to(BinaryOper::Mul),
-//                 just(Token::Symbol(Symbol::ForwardSlash)).to(BinaryOper::Div),
-//                 just(Token::Symbol(Symbol::Percent)).to(BinaryOper::Mod),
-//             ))
-//             .labelled("<binary-oper>"),
-//         );
-//
-//         // Sum ops (add and subtract) have equal precedence
-//         let sum = binary_op_parser(
-//             product,
-//             choice((
-//                 just(Token::Symbol(Symbol::Plus)).to(BinaryOper::Add),
-//                 just(Token::Symbol(Symbol::Minus)).to(BinaryOper::Sub),
-//             ))
-//             .labelled("<binary-oper>"),
-//         );
-//
-//         // arithmetic comparisons (<, <=, >, >=) have equal precedence
-//         let arith_cmp = binary_op_parser(
-//             sum,
-//             choice((
-//                 just(Token::Symbol(Symbol::Lt)).to(BinaryOper::Lt),
-//                 just(Token::Symbol(Symbol::Lte)).to(BinaryOper::Lte),
-//                 just(Token::Symbol(Symbol::Gt)).to(BinaryOper::Gt),
-//                 just(Token::Symbol(Symbol::Gte)).to(BinaryOper::Gte),
-//             ))
-//             .labelled("<binary-oper>"),
-//         );
-//
-//         // equality comparisons (== and !=) have equal precedence
-//         let eq_cmp = binary_op_parser(
-//             arith_cmp,
-//             choice((
-//                 just(Token::Symbol(Symbol::EqualsEquals)).to(BinaryOper::Eq),
-//                 just(Token::Symbol(Symbol::BangEquals)).to(BinaryOper::Neq),
-//             ))
-//             .labelled("<binary-oper>"),
-//         );
-//
-//         // logical AND (&&) has more precedence than logical OR (||)
-//         let logical_and = binary_op_parser(
-//             eq_cmp,
-//             just(Token::Symbol(Symbol::And))
-//                 .to(BinaryOper::And)
-//                 .labelled("<binary-oper>"),
-//         );
-//         let logical_or = binary_op_parser(
-//             logical_and,
-//             just(Token::Symbol(Symbol::Or))
-//                 .to(BinaryOper::Or)
-//                 .labelled("<binary-oper>"),
-//         );
-//
-//         // all expressions have been covered, and every ambiguity resolved
-//         // so we can return the logical OR parser, which should parse all-else
-//         logical_or
-//     })
-// }
-//
+pub fn type_parser<'src, I>() -> impl alias::Parser<'src, I, ast::Type>
+where
+    I: BorrowInput<'src, Token = Token, Span = SourcedSpan> + ValueInput<'src>,
+{
+    recursive(|r#type| {
+        // base types have no recursion
+        let base_type = choice((
+            just(Token::Int).to(ast::BaseType::Int),
+            just(Token::Bool).to(ast::BaseType::Bool),
+            just(Token::Char).to(ast::BaseType::Char),
+            just(Token::String).to(ast::BaseType::String),
+        ))
+        .sn()
+        .labelled("<base-type>");
+
+        // array types are left-recursive, and `chumsky` is a PEG parser meaning it does not
+        // handle left-recursion by default (i.e. it will recurse infinitely) so we need to use
+        // memoization in order to prevent this and allow correct left-recursive grammar parsing
+        let array_type = r#type
+            .then_ignore(group((
+                just(Token::Open(Delim::Bracket)),
+                just(Token::Close(Delim::Bracket)),
+            )))
+            .map(ast::ArrayType::new)
+            .sn()
+            .labelled("<array-type>")
+            .memoized();
+
+        // pair-element type parser
+        let pair_elem_type = choice((
+            base_type.clone().map(ast::PairElemType::BaseType),
+            array_type.clone().map(ast::PairElemType::ArrayType),
+            just(Token::Pair).to_span().map(ast::PairElemType::Pair),
+        ))
+        .labelled("<pair-elem-type>");
+        let pair_type = just(Token::Pair)
+            .ignore_then(
+                group((
+                    pair_elem_type.clone().then_ignore(just(Token::Comma)),
+                    pair_elem_type,
+                ))
+                .map_group(ast::Type::PairType)
+                .delim_by(Delim::Paren),
+            )
+            .labelled("<pair-type>");
+
+        // a type is either a base type, array type, or pair type;
+        // an array type and all other types look the same until the very last, so we should
+        // give precedence to array types to make sure they are not incorrectly missed
+        let r#type = choice((
+            array_type.map(ast::Type::ArrayType),
+            base_type.map(ast::Type::BaseType),
+            pair_type,
+        ))
+        .labelled("<type>");
+
+        // // Perform simplistic error recovery on types
+        // let r#type = r#type
+        //     // Attempt to recover anything that looks like a (parenthesised) pair type but contains errors
+        //     .recover_with_delim(Delim::Paren, ast::Type::Error)
+        //     // Attempt to recover anything that looks like an array-type but contains errors
+        //     .recover_with_delim(Delim::Bracket, ast::Type::Error);
+
+        r#type
+    })
+}
+
 // pub fn type_parser() -> impl Parser<Token, Spanned<Type>, Error = Simple<Token>> + Clone {
 //     // base types have no recursion
 //     let rrbase_type = choice((

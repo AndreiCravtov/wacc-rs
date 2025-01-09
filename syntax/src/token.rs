@@ -1,4 +1,3 @@
-use crate::token::Delim::{Bracket, Paren};
 use crate::{alias, ast, ext::CharExt};
 use chumsky::{error::Rich, input::StrInput, prelude::*, text, IterParser, Parser};
 use internment::ArcIntern;
@@ -15,9 +14,9 @@ impl Delim {
     /// The current number of variants.
     const NUM_VARIANTS: usize = 2;
     /// The current variants.
-    const VARIANTS: [Self; Self::NUM_VARIANTS] = [Paren, Bracket];
+    const VARIANTS: [Self; Self::NUM_VARIANTS] = [Self::Paren, Self::Bracket];
     /// Placeholder element, useful for allocating arrays.
-    const PLACEHOLDER: Self = Paren;
+    const PLACEHOLDER: Self = Self::Paren;
 
     /// A copy of the current variants.
     #[inline]
