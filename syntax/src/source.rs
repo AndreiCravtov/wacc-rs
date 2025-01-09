@@ -15,8 +15,6 @@ pub trait SourceId: Clone + PartialEq + ToOwned {}
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct StrSourceId(Intern<str>);
 
-impl SourceId for StrSourceId {}
-
 impl StrSourceId {
     #[inline]
     pub fn empty() -> Self {
@@ -60,6 +58,8 @@ impl StrSourceId {
         write!(f, "{}", self.0)
     }
 }
+
+impl SourceId for StrSourceId {}
 
 impl fmt::Debug for StrSourceId {
     #[inline]
@@ -105,6 +105,20 @@ impl Deref for StrSourceId {
     }
 }
 
+impl AsRef<StrSourceId> for &StrSourceId {
+    #[inline]
+    fn as_ref(&self) -> &StrSourceId {
+        self
+    }
+}
+
+/// Spans which have a [SourceId] attached to them
+pub trait SourceIdSpan: ChumskySpan<Offset = usize> {
+    type SourceId: SourceId;
+
+    fn source_id(&self) -> &Self::SourceId;
+}
+
 /// A span implementation with reference to the [SourceId] of the source being spanned.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct WithSourceId<SourceIdT = StrSourceId, SpanT = SimpleSpan>
@@ -124,6 +138,21 @@ where
     #[inline]
     pub fn new(source_id: SourceIdT, span: SpanT) -> Self {
         Self { source_id, span }
+    }
+
+    #[inline]
+    fn start(&self) -> usize {
+        self.span.start()
+    }
+
+    #[inline]
+    fn end(&self) -> usize {
+        self.span.end()
+    }
+
+    #[inline]
+    pub fn source_id(&self) -> &SourceIdT {
+        &self.source_id
     }
 
     #[inline]
@@ -179,12 +208,25 @@ where
 
     #[inline]
     fn start(&self) -> Self::Offset {
-        self.span.start()
+        WithSourceId::start(&self)
     }
 
     #[inline]
     fn end(&self) -> Self::Offset {
-        self.span.end()
+        WithSourceId::end(&self)
+    }
+}
+
+impl<SourceIdT, SpanT> SourceIdSpan for WithSourceId<SourceIdT, SpanT>
+where
+    SourceIdT: SourceId,
+    SpanT: ChumskySpan<Offset = usize>,
+{
+    type SourceId = SourceIdT;
+
+    #[inline]
+    fn source_id(&self) -> &Self::SourceId {
+        WithSourceId::source_id(self)
     }
 }
 

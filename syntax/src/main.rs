@@ -1,8 +1,9 @@
+use chumsky::input::WithContext;
 use chumsky::prelude::Input;
 use chumsky::Parser;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
-use wacc_syntax::source::StrSourceId;
+use wacc_syntax::source::{SourcedSpan, StrSourceId};
 use wacc_syntax::token::lexer;
 
 const TEST_EXPR: &str = r#"
@@ -98,7 +99,10 @@ end
 
 fn main() {
     let source_id = StrSourceId::repl();
-    let parse_result = lexer().parse(TEST_PROGRAM.with_context((source_id, ())));
+
+    // so the pattern is, make everything generic asf and supply the concrete implementations later :)
+    let parse_result = lexer::<StrSourceId, WithContext<SourcedSpan, &str>>()
+        .parse(TEST_PROGRAM.with_context((source_id, ())));
     let (tokens, parse_errs) = (parse_result.output().cloned(), parse_result.errors());
 
     if let Some(tokens) = tokens {

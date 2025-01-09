@@ -1,7 +1,10 @@
+#![feature(trait_alias)]
+
 extern crate core;
 
 pub mod ast;
-mod node;
+pub mod node;
+pub mod parser;
 pub mod source;
 pub mod token;
 

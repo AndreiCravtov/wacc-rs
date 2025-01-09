@@ -1,7 +1,7 @@
-use crate::source::{SourceId, WithSourceId};
+use crate::source::{SourceId, SourceIdSpan, WithSourceId};
 use crate::CharExt;
 use chumsky::error::Rich;
-use chumsky::input::WithContext;
+use chumsky::input::{StrInput, WithContext};
 use chumsky::prelude::{any, choice, end, just, regex, skip_then_retry_until, Input};
 use chumsky::{extra, text, IterParser, Parser};
 use internment::ArcIntern;
@@ -148,14 +148,19 @@ impl fmt::Display for Token {
     }
 }
 
+// convenience type-aliases
 type LexerInput<'src> = &'src str;
 type SourcedLexerSpan<'src, S> = WithSourceId<S, <LexerInput<'src> as Input<'src>>::Span>;
 type SourcedLexerInput<'src, S> = WithContext<SourcedLexerSpan<'src, S>, LexerInput<'src>>;
 type SpannedLexerOutput<'src, S> = Vec<(Token, SourcedLexerSpan<'src, S>)>;
 type LexerExtra<'src, S> = extra::Full<Rich<'src, char, SourcedLexerSpan<'src, S>>, (), ()>;
 
-pub fn lexer<'src, S: SourceId + 'src>(
-) -> impl Parser<'src, SourcedLexerInput<'src, S>, SpannedLexerOutput<'src, S>, LexerExtra<'src, S>>
+pub fn lexer<'src, S, I>(
+) -> impl Parser<'src, I, Vec<(Token, I::Span)>, extra::Full<Rich<'src, I::Token, I::Span>, (), ()>>
+where
+    S: SourceId + 'src,
+    I: StrInput<'src, Token = char, Slice = &'src str>,
+    I::Span: SourceIdSpan,
 {
     // TODO: add labels where appropriate
     // TODO: think more about error handling: in partucular the char/string delimiters
