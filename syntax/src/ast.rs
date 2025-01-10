@@ -25,7 +25,7 @@ pub struct Func {
     pub return_type: SN<Type>,
     pub name: SN<Ident>,
     pub params: Box<[FuncParam]>,
-    pub body: SN<FuncBody>,
+    pub body: SN<StatChain>,
 }
 
 impl Func {
@@ -34,7 +34,7 @@ impl Func {
         return_type: SN<Type>,
         name: SN<Ident>,
         params: Box<[FuncParam]>,
-        body: SN<FuncBody>,
+        body: SN<StatChain>,
     ) -> Self {
         Self {
             return_type,
@@ -57,19 +57,6 @@ impl FuncParam {
         println!("TODO: implement actual checks here!!!");
         //TODO: above
         Self { r#type, name }
-    }
-}
-
-/// Wrapper around [StatChain] with the additional constraint that every execution path
-/// must end with either a `return` or `exit` statement
-#[derive(Clone, Debug)]
-#[repr(transparent)]
-pub struct FuncBody(StatChain);
-
-impl FuncBody {
-    #[inline]
-    pub fn new(body: StatChain) -> Self {
-        Self(body)
     }
 }
 

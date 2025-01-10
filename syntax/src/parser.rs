@@ -424,11 +424,8 @@ where
             .map(Result::unwrap);
 
         stat_chain
-    });
-
-    // function body parser: ensures that every execution path ends
-    // with either a `return` or `exit` statement
-    let func_body = stat_chain.clone().map(ast::FuncBody::new).sn();
+    })
+    .sn();
 
     // func params parser
     let func_params = group((r#type.clone(), ident.clone()))
@@ -443,9 +440,15 @@ where
         r#type,
         ident,
         func_params.then_ignore(just(Token::Is)),
-        func_body.then_ignore(just(Token::End)),
+        stat_chain.clone().then_ignore(just(Token::End)),
     ))
-    .map_group(ast::Func::new);
+    .map_group(ast::Func::new)
+    .validate(|func, extra, emitter| {
+        // TODO: an additional syntactic constraint on function bodies is that
+
+        // return func to continue validation of other functions
+        func
+    });
 
     // program parser
     // TODO: figure out error recovery and proper labeling
@@ -455,7 +458,7 @@ where
                 func.repeated()
                     .collect::<Vec<_>>()
                     .map(Vec::into_boxed_slice),
-                stat_chain.sn(),
+                stat_chain,
             ))
             .map_group(ast::Program::new),
         )
