@@ -1,11 +1,27 @@
-use crate::ext::{DelimByParserExt, RecoverWithDelimParserExt, SourcedNodeParserExt};
-use crate::nonempty::NonemptyArray;
-use crate::source::{SourcedNode, SourcedSpan};
-use crate::token::Delim;
-use crate::{alias, ast, token::Token};
-use chumsky::input::{MapExtra, ValueInput};
-use chumsky::pratt::{infix, left, prefix};
-use chumsky::{input::BorrowInput, prelude::*, select_ref, Parser};
+use crate::ext::ParserExt;
+use crate::{
+    alias, ast,
+    nonempty::NonemptyArray,
+    private,
+    source::{SourcedNode, SourcedSpan},
+    token::Delim,
+    token::Token,
+};
+use chumsky::{
+    combinator::{DelimitedBy, MapWith},
+    extra::ParserExtra,
+    input::BorrowInput,
+    input::{MapExtra, ValueInput},
+    pratt::{infix, left, prefix},
+    prelude::*,
+    primitive::Just,
+    recovery::{RecoverWith, ViaParser},
+    select_ref, Parser,
+};
+use extend::ext;
+
+/// A file-local type alias for better readability of type definitions
+type SN<T> = SourcedNode<T>;
 
 pub fn ident_parser<'src, I>() -> impl alias::Parser<'src, I, ast::Ident>
 where
@@ -143,7 +159,7 @@ where
 
         // procedure to fold PRATT patterns into binary expressions
         let binary_fold = |lhs, op, rhs, extra: &mut MapExtra<'src, '_, I, _>| {
-            SourcedNode::new(ast::Expr::Binary(lhs, op, rhs), extra.span())
+            SN::new(ast::Expr::Binary(lhs, op, rhs), extra.span())
         };
 
         // a PRATT parser for prefix and infix operator expressions
@@ -151,7 +167,7 @@ where
             // We want unary operations to happen before any binary ones, so their precedence
             // is set to be the highest. But amongst themselves the precedence is the same.
             prefix(7, unary_oper, |op, rhs, extra| {
-                SourcedNode::new(ast::Expr::Unary(op, rhs), extra.span())
+                SN::new(ast::Expr::Unary(op, rhs), extra.span())
             }),
             // Product ops (multiply, divide, and mod) have equal precedence, and the highest
             // binary operator precedence overall
@@ -172,7 +188,7 @@ where
         ));
 
         // as of now, no other type of expression exists
-        expr.map(SourcedNode::into_inner) // TODO: this removes span from output. If this is not desirable, undo this line
+        expr.map(SN::into_inner) // TODO: this removes span from output. If this is not desirable, undo this line
     })
 }
 
@@ -205,21 +221,15 @@ where
                 ))
                 .ignored()
                 .repeated(),
-                |ty, _, extra| {
-                    ast::Type::ArrayType(SourcedNode::new(ast::ArrayType::new(ty), extra.span()))
-                },
+                |ty, _, extra| ast::Type::ArrayType(SN::new(ast::ArrayType::new(ty), extra.span())),
             )
-            // once we collected any potential array-types in full, we should fail the parsing
-            // route if there weren't any actual array-types; this should never ACTUALLY cause
-            // errors at the end, it's just a somewhat hacky way to do parser control-flow
-            .try_map(|ty, span| match ty {
-                ast::Type::ArrayType(ty) => Ok(ty.into_inner()),
-                _ => Err(Rich::custom(
-                    span,
-                    format!("The type `{:?}` is not an array-type", ty),
-                )),
+            // as explained above, in order to get the parser to consume tokens correctly, we have
+            // to allow the possibility that at this point, this isn't even an ArrayType, so we are
+            // filtering only for array types at this point
+            .select_output(|ty, _| match ty {
+                ast::Type::ArrayType(ty) => Some(ty),
+                _ => None,
             })
-            .sn()
             .memoized()
             .labelled("<array-type>");
 
@@ -268,7 +278,7 @@ where
     let expr = expr_parser();
     let array_elem = array_elem_parser(ident.clone(), expr.clone());
 
-    // wrap parsers with SourcedNode<_>
+    // wrap parsers with SN<_>
     let stat_chain = stat_chain.sn();
     let ident = ident.sn();
     let expr = expr.sn();
@@ -452,4 +462,55 @@ where
         .then_ignore(just(Token::End));
 
     program
+}
+
+/// An extension trait for [Parser] local to this file, for convenient dot-syntax utility methods
+#[ext(name = LocalParserExt, supertraits = Sized + private::Sealed)]
+impl<'src, I, O, E, T> T
+where
+    I: Input<'src>,
+    E: ParserExtra<'src, I>,
+    T: Parser<'src, I, O, E>,
+{
+    /// Convenience method to wrap items in [SN] type.
+    #[inline]
+    fn sn(self) -> MapWith<Self, O, fn(O, &mut MapExtra<'src, '_, I, E>) -> SN<O>>
+    where
+        I: Input<'src, Token = Token, Span = SourcedSpan>,
+    {
+        self.map_with(|t, e| SN::new(t, e.span()))
+    }
+
+    /// Convenience method to delimit a parser pattern by a [Delim].
+    #[inline]
+    fn delim_by(
+        self,
+        delim: Delim,
+    ) -> DelimitedBy<Self, Just<Token, I, E>, Just<Token, I, E>, Token, Token>
+    where
+        I: Input<'src, Token = Token>,
+    {
+        self.delimited_by(just(Token::Open(delim)), just(Token::Close(delim)))
+    }
+
+    /// Convenience method to attempt to recover error recover by searching for the end
+    /// of a [Delim] delimiter, while respecting any nested delimiter structure.
+
+    #[inline]
+    fn recover_with_delim<F>(
+        self,
+        delim: Delim,
+        fallback: F,
+    ) -> RecoverWith<Self, ViaParser<impl Parser<'src, I, O, E> + Clone + Sized>>
+    where
+        I: ValueInput<'src, Token = Token>,
+        F: Fn(I::Span) -> O + Clone,
+    {
+        self.recover_with(via_parser(nested_delimiters(
+            Token::Open(delim),
+            Token::Close(delim),
+            Delim::variants_except(delim).map(|d| (Token::Open(d), Token::Close(d))),
+            fallback,
+        )))
+    }
 }

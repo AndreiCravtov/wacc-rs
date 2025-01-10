@@ -15,29 +15,38 @@ pub(crate) mod private {
     impl<T> Sealed for T {}
 }
 
-/// Namespace for all the extension traits/methods used by this crate
+/// Namespace for crate-wide extension traits/methods
 pub(crate) mod ext {
     use crate::private;
-    use crate::source::{SourcedNode, SourcedSpan};
-    use crate::token::{Delim, Token};
-    use chumsky::combinator::{DelimitedBy, MapWith};
-    use chumsky::extra::ParserExtra;
-    use chumsky::input::{Input, MapExtra, ValueInput};
-    use chumsky::prelude::{just, nested_delimiters, via_parser};
-    use chumsky::primitive::Just;
-    use chumsky::recovery::{RecoverWith, ViaParser};
-    use chumsky::Parser;
+    use chumsky::{
+        combinator::TryMapWith, error::LabelError, extra::ParserExtra, input::MapExtra,
+        prelude::Input, DefaultExpected, Parser,
+    };
+    use extend::ext;
 
     /// Trait for holding all the [char] extension methods.
-    pub(crate) trait CharExt: private::Sealed + Sized {
+    #[ext(pub, name = CharExt, supertraits = private::Sealed)]
+    impl char {
         /// Just like [char::to_string] but takes ownership of the character.
-        fn to_string_owned(self) -> String;
+        fn to_string_owned(self) -> String {
+            self.to_string()
+        }
 
         /// Any ASCII character except `\`, `'` and `"`.
-        fn normal_wacc_char(&self) -> bool;
+        fn normal_wacc_char(&self) -> bool {
+            match self {
+                '\\' | '\'' | '"' => false,
+                _ => true,
+            }
+        }
 
         /// One of `0`, `b`, `t`, `n`, `f`, `r`, `"`, `'` or `\`.
-        fn escaped_wacc_char(&self) -> bool;
+        fn escaped_wacc_char(&self) -> bool {
+            match self {
+                '0' | 'b' | 't' | 'n' | 'f' | 'r' | '"' | '\'' | '\\' => true,
+                _ => false,
+            }
+        }
 
         /// Looks up the character that a WACC-escaped character represents:
         ///
@@ -54,29 +63,7 @@ pub(crate) mod ext {
         /// | `\`                    | `0x5c`      | backslash       |
         ///
         /// Source: WACC-language spec, Table 2.
-        fn lookup_escaped_wacc_char(&self) -> Option<Self>;
-    }
-
-    impl CharExt for char {
-        fn to_string_owned(self) -> String {
-            self.to_string()
-        }
-
-        fn normal_wacc_char(&self) -> bool {
-            match self {
-                '\\' | '\'' | '"' => false,
-                _ => true,
-            }
-        }
-
-        fn escaped_wacc_char(&self) -> bool {
-            match self {
-                '0' | 'b' | 't' | 'n' | 'f' | 'r' | '"' | '\'' | '\\' => true,
-                _ => false,
-            }
-        }
-
-        fn lookup_escaped_wacc_char(&self) -> Option<Self> {
+        fn lookup_escaped_wacc_char(&self) -> Option<char> {
             match self {
                 // Table-2 of the specification
                 '0' => Some(0x00 as char),
@@ -93,86 +80,35 @@ pub(crate) mod ext {
         }
     }
 
-    pub(crate) trait SourcedNodeParserExt<'src, I: Input<'src>, O, E: ParserExtra<'src, I>>:
-        Parser<'src, I, O, E> + private::Sealed + Sized
-    {
-        /// Convenience method to wrap items in [SourcedNode] type.
-        fn sn(self) -> MapWith<Self, O, fn(O, &mut MapExtra<'src, '_, I, E>) -> SourcedNode<O>>;
-    }
-
-    impl<'src, I, O, E, P> SourcedNodeParserExt<'src, I, O, E> for P
+    /// Trait for holding all the [Parser] extension methods.
+    #[ext(pub, name = ParserExt, supertraits = Sized + private::Sealed)]
+    impl<'a, I, O, E, T> T
     where
-        I: Input<'src, Token = Token, Span = SourcedSpan>,
-        E: ParserExtra<'src, I>,
-        P: Parser<'src, I, O, E>,
+        I: Input<'a>,
+        E: ParserExtra<'a, I>,
+        T: Parser<'a, I, O, E>,
     {
-        #[inline]
-        fn sn(self) -> MapWith<Self, O, fn(O, &mut MapExtra<'src, '_, I, E>) -> SourcedNode<O>> {
-            self.map_with(|t, e| SourcedNode::new(t, e.span()))
-        }
-    }
-
-    pub(crate) trait DelimByParserExt<'src, I: Input<'src>, O, E: ParserExtra<'src, I>>:
-        Parser<'src, I, O, E> + private::Sealed + Sized
-    {
-        /// Convenience method to delimit a parser pattern by a [Delim].
-        fn delim_by(
+        /// Like [select] but applies to the output of a [Parser]; its internally implemented using
+        /// the [try_map_with] combinator method.
+        fn select_output<U, F>(
             self,
-            delim: Delim,
-        ) -> DelimitedBy<Self, Just<Token, I, E>, Just<Token, I, E>, Token, Token>;
-    }
-
-    impl<'src, I, O, E, P> DelimByParserExt<'src, I, O, E> for P
-    where
-        I: Input<'src, Token = Token>,
-        E: ParserExtra<'src, I>,
-        P: Parser<'src, I, O, E>,
-    {
-        #[inline]
-        fn delim_by(
-            self,
-            delim: Delim,
-        ) -> DelimitedBy<Self, Just<Token, I, E>, Just<Token, I, E>, Token, Token> {
-            self.delimited_by(just(Token::Open(delim)), just(Token::Close(delim)))
-        }
-    }
-
-    pub(crate) trait RecoverWithDelimParserExt<'src, I: Input<'src>, O, E: ParserExtra<'src, I>>:
-        Parser<'src, I, O, E> + private::Sealed + Sized
-    {
-        /// Convenience method to attempt to recover error recover by searching for the end
-        /// of a [Delim] delimiter, while respecting any nested delimiter structure.
-
-        fn recover_with_delim<F>(
-            self,
-            delim: Delim,
-            fallback: F,
-        ) -> RecoverWith<Self, ViaParser<impl Parser<'src, I, O, E> + Clone + Sized>>
+            f: F,
+        ) -> TryMapWith<
+            Self,
+            O,
+            impl Fn(O, &mut MapExtra<'a, '_, I, E>) -> Result<U, E::Error> + Clone,
+        >
         where
-            F: Fn(I::Span) -> O + Clone;
-    }
-
-    impl<'src, I, O, E, P> RecoverWithDelimParserExt<'src, I, O, E> for P
-    where
-        I: ValueInput<'src, Token = Token>,
-        E: ParserExtra<'src, I>,
-        P: Parser<'src, I, O, E>,
-    {
-        #[inline]
-        fn recover_with_delim<F>(
-            self,
-            delim: Delim,
-            fallback: F,
-        ) -> RecoverWith<Self, ViaParser<impl Parser<'src, I, O, E> + Clone + Sized>>
-        where
-            F: Fn(I::Span) -> O + Clone,
+            F: Fn(O, &mut MapExtra<'a, '_, I, E>) -> Option<U> + Clone,
         {
-            self.recover_with(via_parser(nested_delimiters(
-                Token::Open(delim),
-                Token::Close(delim),
-                Delim::variants_except(delim).map(|d| (Token::Open(d), Token::Close(d))),
-                fallback,
-            )))
+            self.try_map_with(move |x, extra| match f(x, extra) {
+                None => Err(E::Error::expected_found(
+                    Some(DefaultExpected::SomethingElse),
+                    None,
+                    extra.span(),
+                )),
+                Some(x) => Ok(x),
+            })
         }
     }
 }
@@ -189,5 +125,3 @@ pub(crate) mod alias {
         I: Input<'src>,
         I::Token: PartialEq;
 }
-
-pub(crate) mod lib {}
