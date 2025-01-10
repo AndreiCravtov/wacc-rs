@@ -1,3 +1,5 @@
+#![allow(clippy::arbitrary_source_item_ordering)]
+
 use crate::nonempty::NonemptyArray;
 use crate::source::{SourcedNode, SourcedSpan};
 use internment::ArcIntern;
@@ -14,8 +16,9 @@ pub struct Program {
 }
 
 impl Program {
+    #[must_use]
     #[inline]
-    pub fn new(funcs: Box<[Func]>, body: SN<StatChain>) -> Self {
+    pub const fn new(funcs: Box<[Func]>, body: SN<StatChain>) -> Self {
         Self { funcs, body }
     }
 }
@@ -29,8 +32,9 @@ pub struct Func {
 }
 
 impl Func {
+    #[must_use]
     #[inline]
-    pub fn new(
+    pub const fn new(
         return_type: SN<Type>,
         name: SN<Ident>,
         params: Box<[FuncParam]>,
@@ -52,10 +56,9 @@ pub struct FuncParam {
 }
 
 impl FuncParam {
+    #[must_use]
     #[inline]
-    pub fn new(r#type: SN<Type>, name: SN<Ident>) -> Self {
-        println!("TODO: implement actual checks here!!!");
-        //TODO: above
+    pub const fn new(r#type: SN<Type>, name: SN<Ident>) -> Self {
         Self { r#type, name }
     }
 }
@@ -69,24 +72,25 @@ pub struct StatChain(NonemptyArray<SN<Stat>>);
 pub struct EmptyStatVecError;
 
 impl StatChain {
+    #[must_use]
     #[inline]
-    fn singleton(spanned_stat: SN<Stat>) -> Self {
+    pub fn singleton(spanned_stat: SN<Stat>) -> Self {
         Self(NonemptyArray::singleton(spanned_stat))
     }
 
+    #[allow(clippy::missing_errors_doc)]
     #[inline]
     pub fn try_new(spanned_stats: Vec<SN<Stat>>) -> Result<Self, EmptyStatVecError> {
-        match NonemptyArray::try_from_boxed_slice(spanned_stats) {
-            Ok(s) => Ok(Self(s)),
-            Err(_) => Err(EmptyStatVecError),
-        }
+        NonemptyArray::try_from_boxed_slice(spanned_stats)
+            .map(Self)
+            .map_err(|_| EmptyStatVecError)
     }
 }
 
 impl From<SN<Stat>> for StatChain {
     #[inline]
     fn from(spanned_stat: SN<Stat>) -> Self {
-        StatChain::singleton(spanned_stat)
+        Self::singleton(spanned_stat)
     }
 }
 
@@ -95,7 +99,7 @@ impl TryFrom<Vec<SN<Stat>>> for StatChain {
 
     #[inline]
     fn try_from(spanned_stats: Vec<SN<Stat>>) -> Result<Self, Self::Error> {
-        StatChain::try_new(spanned_stats)
+        Self::try_new(spanned_stats)
     }
 }
 
@@ -130,18 +134,21 @@ pub enum Stat {
 }
 
 impl Stat {
+    #[must_use]
     #[inline]
-    pub fn var_definition(r#type: SN<Type>, name: SN<Ident>, rhs: AssignRhs) -> Self {
+    pub const fn var_definition(r#type: SN<Type>, name: SN<Ident>, rhs: AssignRhs) -> Self {
         Self::VarDefinition { r#type, name, rhs }
     }
 
+    #[must_use]
     #[inline]
-    pub fn assignment(lhs: AssignLhs, rhs: AssignRhs) -> Self {
+    pub const fn assignment(lhs: AssignLhs, rhs: AssignRhs) -> Self {
         Self::Assignment { lhs, rhs }
     }
 
+    #[must_use]
     #[inline]
-    pub fn if_then_else(
+    pub const fn if_then_else(
         if_cond: SN<Expr>,
         then_body: SN<StatChain>,
         else_body: SN<StatChain>,
@@ -153,8 +160,9 @@ impl Stat {
         }
     }
 
+    #[must_use]
     #[inline]
-    pub fn while_do(while_cond: SN<Expr>, body: SN<StatChain>) -> Self {
+    pub const fn while_do(while_cond: SN<Expr>, body: SN<StatChain>) -> Self {
         Self::WhileDo { while_cond, body }
     }
 }
@@ -179,8 +187,9 @@ pub enum AssignRhs {
 }
 
 impl AssignRhs {
+    #[must_use]
     #[inline]
-    pub fn call(func_name: SN<Ident>, args: Box<[SN<Expr>]>) -> Self {
+    pub const fn call(func_name: SN<Ident>, args: Box<[SN<Expr>]>) -> Self {
         Self::Call { func_name, args }
     }
 }
@@ -215,8 +224,9 @@ pub struct ArrayType {
 }
 
 impl ArrayType {
+    #[must_use]
     #[inline]
-    pub fn new(elem_type: Type) -> Self {
+    pub const fn new(elem_type: Type) -> Self {
         Self { elem_type }
     }
 }
@@ -266,10 +276,10 @@ pub enum BinaryOper {
     Mod,
     Add,
     Sub,
-    Gt,
-    Gte,
-    Lt,
     Lte,
+    Lt,
+    Gte,
+    Gt,
     Eq,
     Neq,
     And,
@@ -279,21 +289,16 @@ pub enum BinaryOper {
 impl BinaryOper {
     /// The precedence of binary operators in WACC, where lower
     /// is higher. Source: WACC-language spec, Table 4.
-    fn precedence(&self) -> u8 {
-        match self {
-            BinaryOper::Mul => 1,
-            BinaryOper::Div => 1,
-            BinaryOper::Mod => 1,
-            BinaryOper::Add => 2,
-            BinaryOper::Sub => 2,
-            BinaryOper::Gt => 3,
-            BinaryOper::Gte => 3,
-            BinaryOper::Lt => 3,
-            BinaryOper::Lte => 3,
-            BinaryOper::Eq => 4,
-            BinaryOper::Neq => 4,
-            BinaryOper::And => 5,
-            BinaryOper::Or => 6,
+    #[must_use]
+    #[inline]
+    pub const fn precedence(&self) -> u8 {
+        match *self {
+            Self::Mul | Self::Div | Self::Mod => 1,
+            Self::Add | Self::Sub => 2,
+            Self::Lte | Self::Lt | Self::Gte | Self::Gt => 3,
+            Self::Eq | Self::Neq => 4,
+            Self::And => 5,
+            Self::Or => 6,
         }
     }
 }
@@ -302,19 +307,23 @@ impl BinaryOper {
 pub struct Ident(ArcIntern<str>);
 
 impl Ident {
+    #[allow(clippy::should_implement_trait)]
+    #[must_use]
     #[inline]
     pub fn from_str(s: &str) -> Self {
-        Ident(ArcIntern::from(s))
+        Self(ArcIntern::from(s))
     }
 
+    #[must_use]
     #[inline]
     pub fn from_boxed_str(s: Box<str>) -> Self {
-        Ident(ArcIntern::from(s))
+        Self(ArcIntern::from(s))
     }
 
+    #[must_use]
     #[inline]
     pub fn from_string(s: String) -> Self {
-        Ident::from_boxed_str(s.into_boxed_str())
+        Self::from_boxed_str(s.into_boxed_str())
     }
 }
 
@@ -328,6 +337,7 @@ impl fmt::Display for Ident {
 impl Deref for Ident {
     type Target = str;
 
+    #[allow(clippy::explicit_deref_methods)]
     #[inline]
     fn deref(&self) -> &Self::Target {
         self.0.deref()
@@ -341,8 +351,9 @@ pub struct ArrayElem {
 }
 
 impl ArrayElem {
+    #[must_use]
     #[inline]
-    pub fn new(array_name: SN<Ident>, indices: NonemptyArray<SN<Expr>>) -> Self {
+    pub const fn new(array_name: SN<Ident>, indices: NonemptyArray<SN<Expr>>) -> Self {
         Self {
             array_name,
             indices,

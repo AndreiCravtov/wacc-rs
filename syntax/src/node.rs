@@ -1,3 +1,5 @@
+#![allow(clippy::arbitrary_source_item_ordering)]
+
 use std::{
     cmp::Ordering,
     fmt,
@@ -13,20 +15,21 @@ pub struct Node<T, C = ()> {
 
 impl<T, C> Node<T, C> {
     /// Create a new node with the given inner value and context.
-    pub fn new(inner: T, context: C) -> Node<T, C> {
-        Node {
+    #[inline]
+    pub fn new(inner: T, context: C) -> Self {
+        Self {
             inner: Box::new(inner),
             context,
         }
     }
 
     #[inline]
-    pub fn from_boxed(inner: Box<T>, context: C) -> Node<T, C> {
-        Node { inner, context }
+    pub const fn from_boxed(inner: Box<T>, context: C) -> Self {
+        Self { inner, context }
     }
 
     #[inline]
-    pub fn inner(&self) -> &T {
+    pub const fn inner(&self) -> &T {
         &self.inner
     }
 
@@ -49,7 +52,7 @@ impl<T, C> Node<T, C> {
     }
 
     #[inline]
-    pub fn context(&self) -> &C {
+    pub const fn context(&self) -> &C {
         &self.context
     }
 
@@ -59,7 +62,7 @@ impl<T, C> Node<T, C> {
     }
 
     #[inline]
-    pub fn as_tuple(&self) -> (&T, &C) {
+    pub const fn as_tuple(&self) -> (&T, &C) {
         (&self.inner, &self.context)
     }
 
@@ -109,12 +112,14 @@ impl<T: Ord, C> Ord for Node<T, C> {
 }
 
 impl<T: fmt::Debug, C: fmt::Debug> fmt::Debug for Node<T, C> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?} ~ {:#?}", self.context, self.inner)
     }
 }
 
 impl<T: fmt::Display, C: fmt::Display> fmt::Display for Node<T, C> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:} ~ {:#}", self.context, self.inner)
     }

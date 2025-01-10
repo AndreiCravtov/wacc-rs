@@ -1,4 +1,6 @@
-use crate::ext::ParserExt;
+#![allow(clippy::arbitrary_source_item_ordering)]
+
+use crate::ext::ParserExt as _;
 use crate::{
     alias, ast,
     nonempty::NonemptyArray,
@@ -23,24 +25,32 @@ use extend::ext;
 /// A file-local type alias for better readability of type definitions
 type SN<T> = SourcedNode<T>;
 
+#[must_use]
+#[inline]
 pub fn ident_parser<'src, I>() -> impl alias::Parser<'src, I, ast::Ident>
 where
     I: BorrowInput<'src, Token = Token>,
 {
     // identifiers can be extracted directly from `Ident` tokens, copying
     // an internal atomic reference to an interned identifier string
+    #[allow(clippy::pattern_type_mismatch)]
     (select_ref! { Token::Ident(x) => x.clone() }).labelled("<ident>")
 }
 
+#[must_use]
+#[inline]
 pub fn liter_parser<'src, I>() -> impl alias::Parser<'src, I, ast::Liter>
 where
     I: BorrowInput<'src, Token = Token>,
 {
     // some literals can be extracted from their corresponding tokens
+    #[allow(clippy::pattern_type_mismatch)]
     let int_liter =
         select_ref! { Token::IntLiter(x) => ast::Liter::IntLiter(*x) }.labelled("<int-liter>");
+    #[allow(clippy::pattern_type_mismatch)]
     let char_liter =
         select_ref! { Token::CharLiter(x) => ast::Liter::CharLiter(*x) }.labelled("<char-liter>");
+    #[allow(clippy::pattern_type_mismatch)]
     let str_liter = select_ref! { Token::StrLiter(x) => ast::Liter::StrLiter(x.clone()) }
         .labelled("<str-liter>");
 
@@ -54,10 +64,11 @@ where
         .to(ast::Liter::PairLiter)
         .labelled("<pair-liter>");
 
-    let token = choice((int_liter, char_liter, str_liter, bool_liter, pair_liter));
-    token
+    // final literal parser is one of these five
+    choice((int_liter, char_liter, str_liter, bool_liter, pair_liter))
 }
 
+#[inline]
 pub fn array_elem_parser<'src, I, Ident, Expr>(
     ident: Ident,
     expr: Expr,
@@ -82,6 +93,8 @@ where
     array_elem
 }
 
+#[must_use]
+#[inline]
 pub fn expr_parser<'src, I>() -> impl alias::Parser<'src, I, ast::Expr>
 where
     I: BorrowInput<'src, Token = Token, Span = SourcedSpan> + ValueInput<'src>,
@@ -163,6 +176,7 @@ where
         };
 
         // a PRATT parser for prefix and infix operator expressions
+        #[allow(clippy::shadow_unrelated)]
         let expr = atom.sn().pratt((
             // We want unary operations to happen before any binary ones, so their precedence
             // is set to be the highest. But amongst themselves the precedence is the same.
@@ -192,6 +206,8 @@ where
     })
 }
 
+#[must_use]
+#[inline]
 pub fn type_parser<'src, I>() -> impl alias::Parser<'src, I, ast::Type>
 where
     I: BorrowInput<'src, Token = Token, Span = SourcedSpan> + ValueInput<'src>,
@@ -221,7 +237,9 @@ where
                 ))
                 .ignored()
                 .repeated(),
-                |ty, _, extra| ast::Type::ArrayType(SN::new(ast::ArrayType::new(ty), extra.span())),
+                |ty, (), extra| {
+                    ast::Type::ArrayType(SN::new(ast::ArrayType::new(ty), extra.span()))
+                },
             )
             // as explained above, in order to get the parser to consume tokens correctly, we have
             // to allow the possibility that at this point, this isn't even an ArrayType, so we are
@@ -258,6 +276,7 @@ where
         // a type is either a base type, array type, or pair type;
         // an array type and all other types look the same until the very last, so we should
         // give precedence to array types to make sure they are not incorrectly missed
+        #[allow(clippy::shadow_unrelated)]
         let r#type = choice((
             array_type.map(ast::Type::ArrayType),
             base_type.map(ast::Type::BaseType),
@@ -269,6 +288,7 @@ where
     })
 }
 
+#[inline]
 pub fn stat_parser<'src, I, P>(stat_chain: P) -> impl alias::Parser<'src, I, ast::Stat>
 where
     I: BorrowInput<'src, Token = Token, Span = SourcedSpan> + ValueInput<'src>,
@@ -401,9 +421,11 @@ where
         scoped,
     ));
 
+    #[allow(clippy::let_and_return)] // because this is likely to be changed/extended in the future
     stat
 }
 
+#[inline]
 pub fn program_parser<'src, I>() -> impl alias::Parser<'src, I, ast::Program>
 where
     I: BorrowInput<'src, Token = Token, Span = SourcedSpan> + ValueInput<'src>,
@@ -416,6 +438,7 @@ where
         let stat = stat_parser(stat_chain).sn();
 
         // parse statement chains
+        #[allow(clippy::shadow_unrelated)]
         let stat_chain = stat
             .separated_by(just(Token::Semicolon))
             .at_least(1)
@@ -423,6 +446,8 @@ where
             .map(ast::StatChain::try_new)
             .map(Result::unwrap);
 
+        #[allow(clippy::let_and_return)]
+        // because this is likely to be changed/extended in the future
         stat_chain
     })
     .sn();
@@ -443,7 +468,7 @@ where
         stat_chain.clone().then_ignore(just(Token::End)),
     ))
     .map_group(ast::Func::new)
-    .validate(|func, extra, emitter| {
+    .validate(|func, #[allow(unused)] extra, #[allow(unused)] emitter| {
         // TODO: an additional syntactic constraint on function bodies is that
 
         // return func to continue validation of other functions
@@ -464,6 +489,7 @@ where
         )
         .then_ignore(just(Token::End));
 
+    #[allow(clippy::let_and_return)] // because this is likely to be changed/extended in the future
     program
 }
 
@@ -476,6 +502,7 @@ where
     T: Parser<'src, I, O, E>,
 {
     /// Convenience method to wrap items in [SN] type.
+    #[allow(clippy::type_complexity)]
     #[inline]
     fn sn(self) -> MapWith<Self, O, fn(O, &mut MapExtra<'src, '_, I, E>) -> SN<O>>
     where
@@ -485,6 +512,7 @@ where
     }
 
     /// Convenience method to delimit a parser pattern by a [Delim].
+    #[allow(clippy::type_complexity)]
     #[inline]
     fn delim_by(
         self,
@@ -497,14 +525,13 @@ where
     }
 
     /// Convenience method to attempt to recover error recover by searching for the end
-    /// of a [Delim] delimiter, while respecting any nested delimiter structure.
-
+    /// of a [`Delim`] delimiter, while respecting any nested delimiter structure.
     #[inline]
     fn recover_with_delim<F>(
         self,
         delim: Delim,
         fallback: F,
-    ) -> RecoverWith<Self, ViaParser<impl Parser<'src, I, O, E> + Clone + Sized>>
+    ) -> RecoverWith<Self, ViaParser<impl Parser<'src, I, O, E> + Clone>>
     where
         I: ValueInput<'src, Token = Token>,
         F: Fn(I::Span) -> O + Clone,

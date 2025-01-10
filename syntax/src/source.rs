@@ -1,3 +1,5 @@
+#![allow(clippy::arbitrary_source_item_ordering)]
+
 use crate::node::Node;
 use ariadne::Span as AriadneSpan;
 use chumsky::{prelude::SimpleSpan, span::Span as ChumskySpan};
@@ -13,49 +15,56 @@ use std::{
 pub trait SourceId: Clone + PartialEq + ToOwned {}
 
 /// A source which is identified by a string, most commonly a file path.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct StrSourceId(Intern<str>);
 
+#[allow(clippy::arbitrary_source_item_ordering)]
 impl StrSourceId {
+    #[must_use]
     #[inline]
     pub fn empty() -> Self {
-        StrSourceId(Intern::from(""))
+        Self(Intern::from(""))
     }
 
+    #[must_use]
     #[inline]
     pub fn repl() -> Self {
-        StrSourceId(Intern::from("repl"))
+        Self(Intern::from("repl"))
     }
 
+    #[allow(clippy::should_implement_trait)]
+    #[must_use]
     #[inline]
     pub fn from_str(s: &str) -> Self {
-        StrSourceId(Intern::from(s))
+        Self(Intern::from(s))
     }
 
+    #[must_use]
     #[inline]
     pub fn from_boxed_str(s: Box<str>) -> Self {
-        StrSourceId(Intern::from(s))
+        Self(Intern::from(s))
     }
 
+    #[must_use]
     #[inline]
     pub fn from_string(s: String) -> Self {
-        StrSourceId::from_boxed_str(s.into_boxed_str())
+        Self::from_boxed_str(s.into_boxed_str())
     }
 
     #[inline]
     pub fn from_path<P: AsRef<Path>>(path: P) -> Self {
-        StrSourceId::from_string(path.as_ref().to_string_lossy().into_owned())
+        Self::from_string(path.as_ref().to_string_lossy().into_owned())
     }
 
+    #[must_use]
     #[inline]
-
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
+    #[allow(clippy::missing_errors_doc)]
     #[inline]
-
-    pub fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt_impl(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
@@ -65,14 +74,14 @@ impl SourceId for StrSourceId {}
 impl fmt::Debug for StrSourceId {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        StrSourceId::fmt(self, f)
+        Self::fmt_impl(self, f)
     }
 }
 
 impl fmt::Display for StrSourceId {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        StrSourceId::fmt(self, f)
+        Self::fmt_impl(self, f)
     }
 }
 
@@ -80,13 +89,6 @@ impl From<&str> for StrSourceId {
     #[inline]
     fn from(value: &str) -> Self {
         Self::from_str(value)
-    }
-}
-
-impl From<Box<str>> for StrSourceId {
-    #[inline]
-    fn from(value: Box<str>) -> Self {
-        Self::from_boxed_str(value)
     }
 }
 
@@ -113,14 +115,14 @@ impl AsRef<StrSourceId> for &StrSourceId {
     }
 }
 
-/// Spans which have a [SourceId] attached to them
+/// Spans which have a [`SourceId`] attached to them
 pub trait SourceIdSpan: ChumskySpan<Offset = usize> {
     type SourceId: SourceId;
 
     fn source_id(&self) -> &Self::SourceId;
 }
 
-/// A span implementation with reference to the [SourceId] of the source being spanned.
+/// A span implementation with reference to the [`SourceId`] of the source being spanned.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct WithSourceId<SourceIdT = StrSourceId, SpanT = SimpleSpan>
 where
@@ -136,13 +138,15 @@ where
     SourceIdT: SourceId,
     SpanT: ChumskySpan<Offset = usize>,
 {
+    #[allow(clippy::same_name_method)]
     #[inline]
-    pub fn new(source_id: SourceIdT, span: SpanT) -> Self {
+    pub const fn new(source_id: SourceIdT, span: SpanT) -> Self {
         Self { source_id, span }
     }
 
+    #[must_use]
     #[inline]
-    pub fn map_span(self, f: impl Fn(SpanT) -> SpanT) -> Self {
+    pub fn map_span<F: Fn(SpanT) -> SpanT>(self, f: F) -> Self {
         Self {
             span: f(self.span),
             ..self
@@ -150,17 +154,18 @@ where
     }
 
     #[inline]
-    fn start(&self) -> usize {
+    fn start_impl(&self) -> usize {
         self.span.start()
     }
 
     #[inline]
-    fn end(&self) -> usize {
+    fn end_impl(&self) -> usize {
         self.span.end()
     }
 
+    #[allow(clippy::same_name_method)]
     #[inline]
-    pub fn source_id(&self) -> &SourceIdT {
+    pub const fn source_id(&self) -> &SourceIdT {
         &self.source_id
     }
 
@@ -207,7 +212,7 @@ where
 
     #[inline]
     fn new(context: Self::Context, range: Range<Self::Offset>) -> Self {
-        WithSourceId::new(context.0, SpanT::new(context.1, range))
+        Self::new(context.0, SpanT::new(context.1, range))
     }
 
     #[inline]
@@ -217,12 +222,12 @@ where
 
     #[inline]
     fn start(&self) -> Self::Offset {
-        WithSourceId::start(&self)
+        Self::start_impl(self)
     }
 
     #[inline]
     fn end(&self) -> Self::Offset {
-        WithSourceId::end(&self)
+        Self::end_impl(self)
     }
 }
 
@@ -235,7 +240,7 @@ where
 
     #[inline]
     fn source_id(&self) -> &Self::SourceId {
-        WithSourceId::source_id(self)
+        Self::source_id(self)
     }
 }
 
@@ -248,17 +253,17 @@ where
 
     #[inline]
     fn source(&self) -> &Self::SourceId {
-        &self.source_id
+        Self::source_id(self)
     }
 
     #[inline]
     fn start(&self) -> usize {
-        self.span.start()
+        Self::start_impl(self)
     }
 
     #[inline]
     fn end(&self) -> usize {
-        self.span.end()
+        Self::end_impl(self)
     }
 }
 
@@ -266,11 +271,13 @@ pub type SourcedSpan = WithSourceId<StrSourceId, SimpleSpan>;
 pub type SourcedNode<T> = Node<T, SourcedSpan>;
 
 impl<T> SourcedNode<T> {
+    #[must_use]
     #[inline]
     pub fn source_id(&self) -> StrSourceId {
-        self.context().source_id
+        self.context().source_id.clone()
     }
 
+    #[must_use]
     #[inline]
     pub fn span(&self) -> SourcedSpan {
         self.context().clone()

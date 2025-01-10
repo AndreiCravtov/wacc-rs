@@ -1,15 +1,16 @@
-use crate::{alias, ast, ext::CharExt};
-use chumsky::{error::Rich, input::StrInput, prelude::*, text, IterParser, Parser};
+use crate::{alias, ast, ext::CharExt as _};
+use chumsky::{error::Rich, input::StrInput, prelude::*, text};
 use internment::ArcIntern;
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Delim {
-    Paren = 0,
-    Bracket = 1,
+    Bracket = 0,
+    Paren = 1,
 }
 
+#[allow(clippy::arbitrary_source_item_ordering)]
 impl Delim {
     /// The current number of variants.
     const NUM_VARIANTS: usize = 2;
@@ -19,17 +20,26 @@ impl Delim {
     const PLACEHOLDER: Self = Self::Paren;
 
     /// A copy of the current variants.
+    #[must_use]
     #[inline]
     pub const fn variants() -> [Self; Self::NUM_VARIANTS] {
         Self::VARIANTS
     }
 
     /// A reference to the current variants.
+    #[must_use]
     #[inline]
     pub const fn variants_ref() -> &'static [Self; Self::NUM_VARIANTS] {
         &Self::VARIANTS
     }
 
+    #[allow(
+        clippy::indexing_slicing,
+        clippy::as_conversions,
+        clippy::arithmetic_side_effects
+    )]
+    #[inline]
+    #[must_use]
     pub const fn variants_except(self) -> [Self; Self::NUM_VARIANTS - 1] {
         // allocate output array
         let mut others: [Self; Self::NUM_VARIANTS - 1] = [Self::PLACEHOLDER];
@@ -46,7 +56,7 @@ impl Delim {
                 others[j] = delim;
                 j += 1;
             }
-            i += 1
+            i += 1;
         }
 
         others
@@ -54,6 +64,7 @@ impl Delim {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[allow(clippy::arbitrary_source_item_ordering)]
 pub enum Token {
     // literals
     Ident(ast::Ident),
@@ -120,73 +131,76 @@ pub enum Token {
 }
 
 impl fmt::Display for Token {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Token::Ident(s) => write!(f, "{}", s),
-            Token::IntLiter(i) => write!(f, "{}", i),
-            Token::CharLiter(c) => write!(f, "{}", c), // TODO: unescape the character literal, i.e. newline -> '\c'
-            Token::StrLiter(s) => write!(f, "{}", s), // TODO: unescape the string literal, as with char literal
-            Token::Open(d) => match d {
+        match *self {
+            Self::Ident(ref s) => write!(f, "{s}"),
+            Self::IntLiter(ref i) => write!(f, "{i}"),
+            Self::CharLiter(ref c) => write!(f, "{c}"), // TODO: unescape the character literal, i.e. newline -> '\c'
+            Self::StrLiter(ref s) => write!(f, "{s}"), // TODO: unescape the string literal, as with char literal
+            Self::Open(ref d) => match *d {
                 Delim::Paren => write!(f, "("),
                 Delim::Bracket => write!(f, "["),
             },
-            Token::Close(d) => match d {
+            Self::Close(ref d) => match *d {
                 Delim::Paren => write!(f, ")"),
                 Delim::Bracket => write!(f, "]"),
             },
-            Token::Lte => write!(f, "<="),
-            Token::Lt => write!(f, "<"),
-            Token::Gte => write!(f, ">="),
-            Token::Gt => write!(f, ">"),
-            Token::BangEquals => write!(f, "!="),
-            Token::Bang => write!(f, "!"),
-            Token::EqualsEquals => write!(f, "=="),
-            Token::Equals => write!(f, "="),
-            Token::Plus => write!(f, "+"),
-            Token::Minus => write!(f, "-"),
-            Token::Star => write!(f, "*"),
-            Token::Percent => write!(f, "%"),
-            Token::ForwardSlash => write!(f, "/"),
-            Token::And => write!(f, "&&"),
-            Token::Or => write!(f, "||"),
-            Token::Semicolon => write!(f, ";"),
-            Token::Comma => write!(f, ","),
-            Token::Begin => write!(f, "begin"),
-            Token::End => write!(f, "end"),
-            Token::Is => write!(f, "is"),
-            Token::Skip => write!(f, "skip"),
-            Token::Read => write!(f, "read"),
-            Token::Free => write!(f, "free"),
-            Token::Return => write!(f, "return"),
-            Token::Exit => write!(f, "exit"),
-            Token::Print => write!(f, "print"),
-            Token::Println => write!(f, "println"),
-            Token::If => write!(f, "if"),
-            Token::Then => write!(f, "then"),
-            Token::Else => write!(f, "else"),
-            Token::Fi => write!(f, "fi"),
-            Token::While => write!(f, "while"),
-            Token::Do => write!(f, "do"),
-            Token::Done => write!(f, "done"),
-            Token::Newpair => write!(f, "newpair"),
-            Token::Pair => write!(f, "pair"),
-            Token::Fst => write!(f, "fst"),
-            Token::Snd => write!(f, "snd"),
-            Token::Call => write!(f, "call"),
-            Token::Int => write!(f, "int"),
-            Token::Bool => write!(f, "bool"),
-            Token::Char => write!(f, "char"),
-            Token::String => write!(f, "string"),
-            Token::Len => write!(f, "len"),
-            Token::Ord => write!(f, "ord"),
-            Token::Chr => write!(f, "chr"),
-            Token::Null => write!(f, "null"),
-            Token::True => write!(f, "true"),
-            Token::False => write!(f, "false"),
+            Self::Lte => write!(f, "<="),
+            Self::Lt => write!(f, "<"),
+            Self::Gte => write!(f, ">="),
+            Self::Gt => write!(f, ">"),
+            Self::BangEquals => write!(f, "!="),
+            Self::Bang => write!(f, "!"),
+            Self::EqualsEquals => write!(f, "=="),
+            Self::Equals => write!(f, "="),
+            Self::Plus => write!(f, "+"),
+            Self::Minus => write!(f, "-"),
+            Self::Star => write!(f, "*"),
+            Self::Percent => write!(f, "%"),
+            Self::ForwardSlash => write!(f, "/"),
+            Self::And => write!(f, "&&"),
+            Self::Or => write!(f, "||"),
+            Self::Semicolon => write!(f, ";"),
+            Self::Comma => write!(f, ","),
+            Self::Begin => write!(f, "begin"),
+            Self::End => write!(f, "end"),
+            Self::Is => write!(f, "is"),
+            Self::Skip => write!(f, "skip"),
+            Self::Read => write!(f, "read"),
+            Self::Free => write!(f, "free"),
+            Self::Return => write!(f, "return"),
+            Self::Exit => write!(f, "exit"),
+            Self::Print => write!(f, "print"),
+            Self::Println => write!(f, "println"),
+            Self::If => write!(f, "if"),
+            Self::Then => write!(f, "then"),
+            Self::Else => write!(f, "else"),
+            Self::Fi => write!(f, "fi"),
+            Self::While => write!(f, "while"),
+            Self::Do => write!(f, "do"),
+            Self::Done => write!(f, "done"),
+            Self::Newpair => write!(f, "newpair"),
+            Self::Pair => write!(f, "pair"),
+            Self::Fst => write!(f, "fst"),
+            Self::Snd => write!(f, "snd"),
+            Self::Call => write!(f, "call"),
+            Self::Int => write!(f, "int"),
+            Self::Bool => write!(f, "bool"),
+            Self::Char => write!(f, "char"),
+            Self::String => write!(f, "string"),
+            Self::Len => write!(f, "len"),
+            Self::Ord => write!(f, "ord"),
+            Self::Chr => write!(f, "chr"),
+            Self::Null => write!(f, "null"),
+            Self::True => write!(f, "true"),
+            Self::False => write!(f, "false"),
         }
     }
 }
 
+#[allow(clippy::missing_panics_doc, clippy::too_many_lines)]
+#[inline]
 pub fn lexer<'src, I>() -> impl alias::Parser<'src, I, Vec<(Token, I::Span)>>
 where
     I: StrInput<'src, Token = char, Slice = &'src str>,
@@ -194,19 +208,21 @@ where
     // TODO: add labels where appropriate
     // TODO: think more about error handling: in partucular the char/string delimiters
 
+    // TODO: eventually replace with custom error type with variants and so on,
+    // TODO: so it is easier to create type-safe custom errors that can be reported later on
+
     // WACC identifiers are C-style, so we can use the default `text::ident` parser
-    let ident = text::ident()
-        .map(ast::Ident::from_str)
-        .map(|id| Token::Ident(id));
+    let ident = text::ident().map(ast::Ident::from_str).map(Token::Ident);
 
     // copy the Regex pattern found in the WACC spec verbatim
     let int_liter = regex("[\\+-]?[0-9]+")
-        .try_map(|s: &str, span| match s.parse::<i32>() {
-            Ok(i) => Ok(i),
-            Err(_) => Err(Rich::custom(
-                span,
-                format!("The integer literal '{}' does not fit within 32 bytes", s),
-            )),
+        .try_map(|s: &str, span| {
+            s.parse::<i32>().map_err(|_| {
+                Rich::custom(
+                    span,
+                    format!("The integer literal '{s}' does not fit within 32 bytes"),
+                )
+            })
         })
         .map(Token::IntLiter);
 
@@ -216,7 +232,10 @@ where
         just('\\')
             .ignore_then(any())
             .filter(char::escaped_wacc_char)
-            .map(|c| c.lookup_escaped_wacc_char().unwrap()),
+            .map(|c| {
+                #[allow(clippy::unwrap_used)]
+                c.lookup_escaped_wacc_char().unwrap()
+            }),
     ));
 
     // character literal parser

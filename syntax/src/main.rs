@@ -1,19 +1,24 @@
+#![allow(clippy::arbitrary_source_item_ordering)]
+
 use chumsky::error::RichReason;
 use chumsky::input::WithContext;
-use chumsky::prelude::Input;
+use chumsky::prelude::Input as _;
 use chumsky::Parser;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use wacc_syntax::parser::program_parser;
 use wacc_syntax::source::{SourcedSpan, StrSourceId};
-use wacc_syntax::token::lexer;
+use wacc_syntax::token::{lexer, Token};
 
+#[allow(dead_code)]
 const TEST_EXPR: &str = r#"
 (foo == bar[23][3234 + ord - chr flll][34][234]) * len - ord ("some string literal" - chr - +2341) >= 23 == '\\'
 "#;
 
+#[allow(dead_code, clippy::needless_raw_string_hashes)]
 const TEST_TYPE: &str = r#"pair(int, pair(pair,string)[][][])[][]"#;
 
+#[allow(dead_code)]
 const TEST_PROGRAM: &str = r#"
 # The program reads n (number of integers), then n integers. After each input, 
 # it insert the integer into a binary search tree. At the end, it prints out 
@@ -100,38 +105,41 @@ end
 fn main() {
     let source = TEST_PROGRAM;
     let source_id = StrSourceId::repl();
-    let eoi_span = SourcedSpan::new(source_id, (source.len()..source.len()).into());
+    let eoi_span = SourcedSpan::new(source_id.clone(), (source.len()..source.len()).into());
 
     // so the pattern is, make everything generic asf and supply the concrete implementations later :)
-    let (tokens, parse_errs) = lexer::<WithContext<SourcedSpan, &str>>()
-        .parse(source.with_context((source_id, ())))
-        .into_output_errors();
+    let (tokens, lexing_errs): (Option<Vec<(Token, _)>>, _) = Parser::parse(
+        &lexer::<WithContext<SourcedSpan, &str>>(),
+        source.with_context((source_id, ())),
+    )
+    .into_output_errors();
 
     if let Some(tokens) = tokens {
         println!("{:?}", DisplayVec(tokens.clone()));
 
         // attach the span of each token to it before parsing, so it is not forgotten
+        #[allow(clippy::pattern_type_mismatch)]
         let spanned_tokens = tokens.as_slice().map(eoi_span, |(t, s)| (t, s));
         let (parsed, parse_errs) = program_parser().parse(spanned_tokens).into_output_errors();
 
-        println!("{:?}", parsed);
+        println!("{parsed:?}");
 
         for e in parse_errs {
             let span: SourcedSpan = e.span().clone();
             let reason: RichReason<_> = e.reason().clone();
             let contexts = e.contexts();
-            println!("Parse error at {:?}", span);
-            println!("Reason:\n{:#?}", reason);
+            println!("Parse error at {span:?}");
+            println!("Reason:\n{reason:#?}");
             println!("Contexts:\n");
             for context in contexts {
-                println!("-> {:#?}", context);
+                println!("-> {context:#?}");
             }
         }
     }
 
-    parse_errs
-        .into_iter()
-        .for_each(|e| println!("Lexing error: {}", e))
+    for e in lexing_errs {
+        println!("Lexing error: {e}");
+    }
 }
 
 #[repr(transparent)]
@@ -157,6 +165,7 @@ impl<T> DerefMut for DisplayVec<T> {
     }
 }
 
+#[allow(clippy::arithmetic_side_effects)]
 impl<T: fmt::Display> fmt::Display for DisplayVec<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{{")?;
@@ -165,14 +174,14 @@ impl<T: fmt::Display> fmt::Display for DisplayVec<T> {
         for i in self.iter() {
             // control items-per-line width
             if width == 0 {
-                write!(f, "\n")?;
-                for _ in 0..DisplayVec::<T>::OFFSET_WIDTH {
+                writeln!(f)?;
+                for _ in 0..Self::OFFSET_WIDTH {
                     write!(f, " ")?;
                 }
-                width = DisplayVec::<T>::DISPLAY_WIDTH;
+                width = Self::DISPLAY_WIDTH;
             }
             width -= 1;
-            write!(f, "{}, ", i)?;
+            write!(f, "{i}, ")?;
         }
 
         write!(f, "\n}}")
