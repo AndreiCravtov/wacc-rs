@@ -100,7 +100,8 @@ begin
   i = call printTree(root) ;
   println "\t\n\0\f\r"
 end
-"#;
+
+# this should be EOF comment"#;
 
 fn main() {
     let source = TEST_PROGRAM;

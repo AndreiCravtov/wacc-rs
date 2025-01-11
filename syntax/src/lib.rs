@@ -5,6 +5,7 @@
 // enable Rust-unstable features for convenience
 #![feature(trait_alias)]
 #![feature(stmt_expr_attributes)]
+#![feature(unboxed_closures)]
 
 /// Namespace for all the type/trait aliases used by this crate.
 pub(crate) mod alias {
@@ -24,14 +25,15 @@ pub mod ast;
 /// Namespace for crate-wide extension traits/methods
 pub(crate) mod ext {
     use crate::private;
-    use chumsky::combinator::{MapWith, OrNot, Then};
+    use chumsky::combinator::{Map, MapWith, OrNot, Then};
     use chumsky::{
         combinator::TryMapWith, error::LabelError as _, extra::ParserExtra, input::MapExtra,
         prelude::Input, DefaultExpected, Parser,
     };
     use extend::ext;
+    use fn_pipe::FnPipe;
 
-    /// Trait for holding all the [char] extension methods.
+    /// Trait for holding all the [`char`] extension methods.
     #[ext(pub, name = CharExt, supertraits = private::Sealed)]
     impl char {
         /// One of `0`, `b`, `t`, `n`, `f`, `r`, `"`, `'` or `\`.
@@ -88,13 +90,13 @@ pub(crate) mod ext {
             }
         }
 
-        /// Just like [char::to_string] but takes ownership of the character.
+        /// Just like [`char::to_string`] but takes ownership of the character.
         fn to_string_owned(self) -> String {
             self.to_string()
         }
     }
 
-    /// Trait for holding all the [Parser] extension methods.
+    /// Trait for holding all the [`Parser`] extension methods.
     #[ext(pub, name = ParserExt, supertraits = Sized + private::Sealed)]
     impl<'a, I, O, E, T> T
     where
@@ -102,10 +104,9 @@ pub(crate) mod ext {
         E: ParserExtra<'a, I>,
         T: Parser<'a, I, O, E>,
     {
-        /// Currently [`chumsky`]'s [chumsky::pratt::Infix] parser does not support non-associative
+        /// Currently [`chumsky`]'s [`chumsky::pratt::Infix`] parser does not support non-associative
         /// infix operations, so this is a replacement implementation until that feature is added
         #[allow(clippy::type_complexity)]
-        #[inline]
         fn infix_non_assoc<A, F, Op>(
             self,
             op_parser: A,
@@ -128,8 +129,29 @@ pub(crate) mod ext {
             )
         }
 
-        /// Like [select] but applies to the output of a [Parser]; its internally implemented using
-        /// the [try_map_with] combinator method.
+        /// Like [`Parser::map`] but instead of mapping by calling a function, it runs a pipe
+        /// of functions instead. See [`fn_pipe`].
+        fn pipe<U, F>(self, f: F) -> Map<Self, O, impl Fn(O) -> U + Clone>
+        where
+            F: FnPipe(O) -> U + Clone,
+        {
+            self.map(move |x| f.run((x,)))
+        }
+
+        /// Like [`Parser::map_with`] but instead of mapping by calling a function, it runs a pipe
+        /// of functions instead. See [`fn_pipe`].
+        fn pipe_with<U, F>(
+            self,
+            f: F,
+        ) -> MapWith<Self, O, impl Fn(O, &mut MapExtra<'a, '_, I, E>) -> U + Clone>
+        where
+            F: FnPipe(O, &mut MapExtra<'a, '_, I, E>) -> U + Clone,
+        {
+            self.map_with(move |x, extra| f.run((x, extra)))
+        }
+
+        /// Like [`Parser::select`] but applies to the output of a [`Parser`]; its internally
+        /// implemented using the [`Parser::try_map_with`] combinator method.
         #[allow(clippy::type_complexity)]
         fn select_output<U, F>(
             self,
@@ -156,7 +178,6 @@ pub(crate) mod ext {
 pub mod node;
 
 pub mod nonempty;
-
 pub mod parser;
 
 pub(crate) mod private {

@@ -1,3 +1,4 @@
+use crate::ext::ParserExt;
 use crate::{alias, ast, ext::CharExt as _};
 use chumsky::{error::Rich, input::StrInput, prelude::*, text};
 use internment::ArcIntern;
@@ -212,7 +213,9 @@ where
     // TODO: so it is easier to create type-safe custom errors that can be reported later on
 
     // WACC identifiers are C-style, so we can use the default `text::ident` parser
-    let ident = text::ident().map(ast::Ident::from_str).map(Token::Ident);
+    let ident = text::ident()
+        .pipe((ast::Ident::from_str, Token::Ident))
+        .labelled("<ident>");
 
     // copy the Regex pattern found in the WACC spec verbatim
     let int_liter = regex("[\\+-]?[0-9]+")
@@ -236,7 +239,8 @@ where
                 #[allow(clippy::unwrap_used)]
                 c.lookup_escaped_wacc_char().unwrap()
             }),
-    ));
+    ))
+    .labelled("<character>");
 
     // character literal parser
     let char_delim = just('\'');
@@ -250,8 +254,7 @@ where
         .repeated()
         .collect::<String>()
         .delimited_by(str_delim, str_delim)
-        .map(ArcIntern::from)
-        .map(Token::StrLiter);
+        .pipe((ArcIntern::from, Token::StrLiter));
 
     let delim_symbols = choice((
         just('(').to(Token::Open(Delim::Paren)),
@@ -331,14 +334,19 @@ where
         ident,
     ));
 
-    // the comments are only single-line, started with a hashtag
-    let comment = just("#")
-        .then(any().and_is(just('\n').not()).repeated())
-        .padded();
+    // <comment>  ::=  ‘#’ (any-character-except-EOL)* (⟨EOL⟩ | ⟨EOF⟩)
+    let eol = just('\n').ignored();
+    let comment = group((
+        just('#').ignored(),
+        any().and_is(eol.not()).repeated(),
+        choice((eol, end())),
+    ))
+    .labelled("<comment>");
 
+    // tokens are padded by comments and whitespace
     token
         .map_with(|t, e| (t, e.span()))
-        .padded_by(comment.repeated())
+        .padded_by(comment.padded().repeated())
         .padded()
         // If we encounter an error, skip and attempt to lex the next character as a token instead
         .recover_with(skip_then_retry_until(any().ignored(), end()))

@@ -37,6 +37,7 @@ where
     (select_ref! { Token::Ident(x) => x.clone() }).labelled("<ident>")
 }
 
+#[allow(clippy::pattern_type_mismatch)]
 #[must_use]
 #[inline]
 pub fn liter_parser<'src, I>() -> impl alias::Parser<'src, I, ast::Liter>
@@ -44,13 +45,10 @@ where
     I: BorrowInput<'src, Token = Token>,
 {
     // some literals can be extracted from their corresponding tokens
-    #[allow(clippy::pattern_type_mismatch)]
     let int_liter =
         select_ref! { Token::IntLiter(x) => ast::Liter::IntLiter(*x) }.labelled("<int-liter>");
-    #[allow(clippy::pattern_type_mismatch)]
     let char_liter =
         select_ref! { Token::CharLiter(x) => ast::Liter::CharLiter(*x) }.labelled("<char-liter>");
-    #[allow(clippy::pattern_type_mismatch)]
     let str_liter = select_ref! { Token::StrLiter(x) => ast::Liter::StrLiter(x.clone()) }
         .labelled("<str-liter>");
 
@@ -84,8 +82,7 @@ where
         .repeated()
         .at_least(1)
         .collect::<Vec<_>>()
-        .map(NonemptyArray::try_from_boxed_slice)
-        .map(Result::unwrap);
+        .pipe((NonemptyArray::try_from_boxed_slice, Result::unwrap));
     let array_elem = group((ident.sn(), array_elem_indices))
         .map_group(ast::ArrayElem::new)
         .labelled("<array-elem>");
@@ -443,8 +440,7 @@ where
             .separated_by(just(Token::Semicolon))
             .at_least(1)
             .collect::<Vec<_>>()
-            .map(ast::StatChain::try_new)
-            .map(Result::unwrap);
+            .pipe((ast::StatChain::try_new, Result::unwrap));
 
         #[allow(clippy::let_and_return)]
         // because this is likely to be changed/extended in the future

@@ -85,6 +85,12 @@ impl StatChain {
             .map(Self)
             .map_err(|_| EmptyStatVecError)
     }
+
+    pub fn is_return_block() -> bool {
+        // TODO: rename stat_chain to block..... & impl this
+
+        todo!()
+    }
 }
 
 impl From<SN<Stat>> for StatChain {
