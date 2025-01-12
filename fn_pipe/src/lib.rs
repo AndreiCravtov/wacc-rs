@@ -30,6 +30,6 @@ pub trait FnOncePipe<Args: Tuple> {
     extern "rust-call" fn run_once(self, args: Args) -> Self::Output;
 }
 
-// implement `Fn/Pipe*` variants for tuples of upto length 16,
+// implement `Fn/Pipe*` variants for tuples of upto length 26,
 // can be increased in the future
-impl_fn_pipe_for_tuple!(16usize);
+impl_fn_pipe_for_tuple!(26usize);

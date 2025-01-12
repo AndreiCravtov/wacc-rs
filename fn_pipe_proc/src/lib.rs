@@ -57,7 +57,7 @@ pub fn impl_fn_pipe_for_tuple(item: TokenStream) -> TokenStream {
     // generate generic function type-names, to be used later everywhere
     let mut fn_type_names = Vec::with_capacity(max_tuple_size);
     for i in 0..max_tuple_size {
-        fn_type_names.push(format!("F_{i}").parse_unchecked());
+        fn_type_names.push(format!("_{i}").parse_unchecked());
     }
 
     // create a middle type constraint (i.e. not the first one)
