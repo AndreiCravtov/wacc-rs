@@ -2,6 +2,7 @@
 
 use crate::nonempty::NonemptyArray;
 use crate::source::{SourcedNode, SourcedSpan};
+use delegate::delegate;
 use internment::ArcIntern;
 use std::{fmt, fmt::Debug, ops::Deref};
 use thiserror::Error;
@@ -12,13 +13,13 @@ type SN<T> = SourcedNode<T>;
 #[derive(Clone, Debug)]
 pub struct Program {
     pub funcs: Box<[Func]>,
-    pub body: SN<StatChain>,
+    pub body: SN<StatBlock>,
 }
 
 impl Program {
     #[must_use]
     #[inline]
-    pub const fn new(funcs: Box<[Func]>, body: SN<StatChain>) -> Self {
+    pub const fn new(funcs: Box<[Func]>, body: SN<StatBlock>) -> Self {
         Self { funcs, body }
     }
 }
@@ -28,7 +29,7 @@ pub struct Func {
     pub return_type: SN<Type>,
     pub name: SN<Ident>,
     pub params: Box<[FuncParam]>,
-    pub body: SN<StatChain>,
+    pub body: SN<StatBlock>,
 }
 
 impl Func {
@@ -38,7 +39,7 @@ impl Func {
         return_type: SN<Type>,
         name: SN<Ident>,
         params: Box<[FuncParam]>,
-        body: SN<StatChain>,
+        body: SN<StatBlock>,
     ) -> Self {
         Self {
             return_type,
@@ -65,13 +66,13 @@ impl FuncParam {
 
 #[derive(Clone, Debug)]
 #[repr(transparent)]
-pub struct StatChain(NonemptyArray<SN<Stat>>);
+pub struct StatBlock(NonemptyArray<SN<Stat>>);
 
 #[derive(Error, Debug)]
-#[error("Cannot create to `StatChain` because the supplied `Vec<Stat>` is empty")]
+#[error("Cannot create to `StatBlock` because the supplied `Vec<Stat>` is empty")]
 pub struct EmptyStatVecError;
 
-impl StatChain {
+impl StatBlock {
     #[must_use]
     #[inline]
     pub fn singleton(spanned_stat: SN<Stat>) -> Self {
@@ -86,21 +87,43 @@ impl StatChain {
             .map_err(|_| EmptyStatVecError)
     }
 
-    pub fn is_return_block() -> bool {
-        // TODO: rename stat_chain to block..... & impl this
+    /// A block of statements is called ‘returning’ if the last statement in the block is either:
+    ///
+    ///     1. a ‘return’ statement
+    ///     2. an ‘exit’ statement
+    ///     3. an ‘if’ statement with two returning blocks.
+    ///
+    /// All function bodies **MUST** be returning blocks.
+    pub fn is_return_block(&self) -> bool {
+        match &**self.last() {
+            Stat::Return(_) | Stat::Exit(_) => true,
+            Stat::IfThenElse {
+                then_body,
+                else_body,
+                ..
+            } => then_body.is_return_block() && else_body.is_return_block(),
+            _ => false,
+        }
+    }
 
-        todo!()
+    delegate! {
+        to self.0 {
+            #[inline]
+            pub fn first(&self) -> &SN<Stat>;
+            #[inline]
+            pub fn last(&self) -> &SN<Stat>;
+        }
     }
 }
 
-impl From<SN<Stat>> for StatChain {
+impl From<SN<Stat>> for StatBlock {
     #[inline]
     fn from(spanned_stat: SN<Stat>) -> Self {
         Self::singleton(spanned_stat)
     }
 }
 
-impl TryFrom<Vec<SN<Stat>>> for StatChain {
+impl TryFrom<Vec<SN<Stat>>> for StatBlock {
     type Error = EmptyStatVecError;
 
     #[inline]
@@ -115,13 +138,13 @@ pub enum Stat {
     VarDefinition {
         r#type: SN<Type>,
         name: SN<Ident>,
-        rhs: AssignRhs,
+        rvalue: RValue,
     },
     Assignment {
-        lhs: AssignLhs,
-        rhs: AssignRhs,
+        lvalue: LValue,
+        rvalue: RValue,
     },
-    Read(AssignLhs),
+    Read(LValue),
     Free(SN<Expr>),
     Return(SN<Expr>),
     Exit(SN<Expr>),
@@ -129,35 +152,39 @@ pub enum Stat {
     Println(SN<Expr>),
     IfThenElse {
         if_cond: SN<Expr>,
-        then_body: SN<StatChain>,
-        else_body: SN<StatChain>,
+        then_body: SN<StatBlock>,
+        else_body: SN<StatBlock>,
     },
     WhileDo {
         while_cond: SN<Expr>,
-        body: SN<StatChain>,
+        body: SN<StatBlock>,
     },
-    Scoped(SN<StatChain>),
+    Scoped(SN<StatBlock>),
 }
 
 impl Stat {
     #[must_use]
     #[inline]
-    pub const fn var_definition(r#type: SN<Type>, name: SN<Ident>, rhs: AssignRhs) -> Self {
-        Self::VarDefinition { r#type, name, rhs }
+    pub const fn var_definition(r#type: SN<Type>, name: SN<Ident>, rvalue: RValue) -> Self {
+        Self::VarDefinition {
+            r#type,
+            name,
+            rvalue,
+        }
     }
 
     #[must_use]
     #[inline]
-    pub const fn assignment(lhs: AssignLhs, rhs: AssignRhs) -> Self {
-        Self::Assignment { lhs, rhs }
+    pub const fn assignment(lvalue: LValue, rvalue: RValue) -> Self {
+        Self::Assignment { lvalue, rvalue }
     }
 
     #[must_use]
     #[inline]
     pub const fn if_then_else(
         if_cond: SN<Expr>,
-        then_body: SN<StatChain>,
-        else_body: SN<StatChain>,
+        then_body: SN<StatBlock>,
+        else_body: SN<StatBlock>,
     ) -> Self {
         Self::IfThenElse {
             if_cond,
@@ -168,23 +195,23 @@ impl Stat {
 
     #[must_use]
     #[inline]
-    pub const fn while_do(while_cond: SN<Expr>, body: SN<StatChain>) -> Self {
+    pub const fn while_do(while_cond: SN<Expr>, body: SN<StatBlock>) -> Self {
         Self::WhileDo { while_cond, body }
     }
 }
 
 #[derive(Clone, Debug)]
-pub enum AssignLhs {
+pub enum LValue {
     Ident(SN<Ident>),
     ArrayElem(ArrayElem),
-    PairElem(PairElem),
+    PairElem(SN<PairElem>),
 }
 
 #[derive(Clone, Debug)]
-pub enum AssignRhs {
+pub enum RValue {
     Expr(SN<Expr>),
     ArrayLiter(Box<[SN<Expr>]>),
-    Newpair(SN<Expr>, SN<Expr>),
+    NewPair(SN<Expr>, SN<Expr>),
     PairElem(PairElem),
     Call {
         func_name: SN<Ident>,
@@ -192,7 +219,7 @@ pub enum AssignRhs {
     },
 }
 
-impl AssignRhs {
+impl RValue {
     #[must_use]
     #[inline]
     pub const fn call(func_name: SN<Ident>, args: Box<[SN<Expr>]>) -> Self {
@@ -202,8 +229,8 @@ impl AssignRhs {
 
 #[derive(Clone, Debug)]
 pub enum PairElem {
-    Fst(SN<Expr>),
-    Snd(SN<Expr>),
+    Fst(SN<LValue>),
+    Snd(SN<LValue>),
 }
 
 #[derive(Clone, Debug)]

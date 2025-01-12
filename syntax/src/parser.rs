@@ -9,6 +9,7 @@ use crate::{
     token::Delim,
     token::Token,
 };
+use chumsky::pratt::right;
 use chumsky::{
     combinator::{DelimitedBy, MapWith},
     extra::ParserExtra,
@@ -167,35 +168,41 @@ where
             .sn()
             .labelled("<binary-oper>");
 
-        // procedure to fold PRATT patterns into binary expressions
-        let binary_fold = |lhs, op, rhs, extra: &mut MapExtra<'src, '_, I, _>| {
+        // procedure to turn patterns into binary expressions
+        let binary_create = |lhs, op, rhs, extra: &mut MapExtra<'src, '_, I, _>| {
             SN::new(ast::Expr::Binary(lhs, op, rhs), extra.span())
         };
 
-        // a PRATT parser for prefix and infix operator expressions
+        // a PRATT parser for prefix and left-infix operator expressions
         #[allow(clippy::shadow_unrelated)]
-        let expr = atom.sn().pratt((
+        let atom = atom.sn().pratt((
             // We want unary operations to happen before any binary ones, so their precedence
             // is set to be the highest. But amongst themselves the precedence is the same.
-            prefix(7, unary_oper, |op, rhs, extra| {
+            prefix(3, unary_oper, |op, rhs, extra| {
                 SN::new(ast::Expr::Unary(op, rhs), extra.span())
             }),
             // Product ops (multiply, divide, and mod) have equal precedence, and the highest
             // binary operator precedence overall
-            infix(left(6), product_oper, binary_fold),
+            infix(left(2), product_oper, binary_create),
             // Sum ops (add and subtract) have equal precedence, just below the precedence
             // of product ops
-            infix(left(5), sum_oper, binary_fold),
-            // Arithmetic comparisons (<, <=, >, >=) have equal precedence, just below the
-            // precedence of sum ops
-            infix(left(4), arith_cmp_oper, binary_fold),
-            // Equality comparisons (== and !=) have equal precedence, just below the
-            // precedence of arithmetic comparisons
-            infix(left(3), eq_cmp_oper, binary_fold),
+            infix(left(1), sum_oper, binary_create),
+        ));
+
+        // Arithmetic comparisons (<, <=, >, >=) have equal precedence, just below the
+        // precedence of sum ops
+        let atom = atom.infix_non_assoc(arith_cmp_oper, binary_create);
+        // Equality comparisons (== and !=) have equal precedence, just below the
+        // precedence of arithmetic comparisons
+        let atom = atom.infix_non_assoc(eq_cmp_oper, binary_create);
+
+        // a PRATT parser for right-infix operator expressions
+        #[allow(clippy::shadow_unrelated)]
+        let expr = atom.pratt((
             // logical AND (&&) has more precedence than logical OR (||), where AND has
             // precedence just below that of equality comparisons
-            infix(left(2), land_oper, binary_fold),
-            infix(left(1), lor_oper, binary_fold),
+            infix(right(2), land_oper, binary_create),
+            infix(right(1), lor_oper, binary_create),
         ));
 
         // as of now, no other type of expression exists
@@ -289,7 +296,7 @@ where
 pub fn stat_parser<'src, I, P>(stat_chain: P) -> impl alias::Parser<'src, I, ast::Stat>
 where
     I: BorrowInput<'src, Token = Token, Span = SourcedSpan> + ValueInput<'src>,
-    P: alias::Parser<'src, I, ast::StatChain>,
+    P: alias::Parser<'src, I, ast::StatBlock>,
 {
     let ident = ident_parser();
     let expr = expr_parser();
@@ -312,41 +319,43 @@ where
     let array_liter = expr_sequence
         .clone()
         .delim_by(Delim::Bracket)
-        .map(ast::AssignRhs::ArrayLiter);
+        .map(ast::RValue::ArrayLiter);
 
     // newpair parser
     let newpair = just(Token::Newpair).ignore_then(
         group((expr.clone().then_ignore(just(Token::Comma)), expr.clone()))
             .delim_by(Delim::Paren)
-            .map_group(ast::AssignRhs::Newpair),
+            .map_group(ast::RValue::NewPair),
     );
+
+    // declare the LValue parser
+    let mut lvalue = Recursive::declare();
 
     // pair-elem parser
     let pair_elem = choice((
-        just(Token::Fst).ignore_then(expr.clone().map(ast::PairElem::Fst)),
-        just(Token::Snd).ignore_then(expr.clone().map(ast::PairElem::Snd)),
+        just(Token::Fst).ignore_then(lvalue.clone().sn().map(ast::PairElem::Fst)),
+        just(Token::Snd).ignore_then(lvalue.clone().sn().map(ast::PairElem::Snd)),
     ));
 
     // function call parser
     let function_call = just(Token::Call).ignore_then(
-        group((ident.clone(), expr_sequence.delim_by(Delim::Paren)))
-            .map_group(ast::AssignRhs::call),
+        group((ident.clone(), expr_sequence.delim_by(Delim::Paren))).map_group(ast::RValue::call),
     );
 
-    // assign-lhs parser: array-elem contains identifier within it, so it should be
+    // define the lvalue parser: array-elem contains identifier within it, so it should be
     // given parsing precedence to disambiguate properly
-    let assign_lhs = choice((
-        array_elem.map(ast::AssignLhs::ArrayElem),
-        pair_elem.clone().map(ast::AssignLhs::PairElem),
-        ident.clone().map(ast::AssignLhs::Ident),
-    ));
+    lvalue.define(choice((
+        array_elem.map(ast::LValue::ArrayElem),
+        pair_elem.clone().sn().map(ast::LValue::PairElem),
+        ident.clone().map(ast::LValue::Ident),
+    )));
 
-    // assign-rhs parser
-    let assign_rhs = choice((
-        expr.clone().map(ast::AssignRhs::Expr),
+    // rvalue parser
+    let rvalue = choice((
+        expr.clone().map(ast::RValue::Expr),
         array_liter,
         newpair,
-        pair_elem.map(ast::AssignRhs::PairElem),
+        pair_elem.map(ast::RValue::PairElem),
         function_call,
     ));
 
@@ -354,16 +363,13 @@ where
     let variable_definition = group((
         r#type,
         ident.then_ignore(just(Token::Equals)),
-        assign_rhs.clone(),
+        rvalue.clone(),
     ))
     .map_group(ast::Stat::var_definition);
 
     // assignment parser
-    let assignment = group((
-        assign_lhs.clone().then_ignore(just(Token::Equals)),
-        assign_rhs,
-    ))
-    .map_group(ast::Stat::assignment);
+    let assignment = group((lvalue.clone().then_ignore(just(Token::Equals)), rvalue))
+        .map_group(ast::Stat::assignment);
 
     // if-then-else parser
     let if_then_else = just(Token::If).ignore_then(
@@ -395,9 +401,7 @@ where
         just(Token::Skip).to(ast::Stat::Skip),
         variable_definition,
         assignment,
-        just(Token::Read)
-            .ignore_then(assign_lhs)
-            .map(ast::Stat::Read),
+        just(Token::Read).ignore_then(lvalue).map(ast::Stat::Read),
         just(Token::Free)
             .ignore_then(expr.clone())
             .map(ast::Stat::Free),
@@ -440,7 +444,7 @@ where
             .separated_by(just(Token::Semicolon))
             .at_least(1)
             .collect::<Vec<_>>()
-            .pipe((ast::StatChain::try_new, Result::unwrap));
+            .pipe((ast::StatBlock::try_new, Result::unwrap));
 
         #[allow(clippy::let_and_return)]
         // because this is likely to be changed/extended in the future
@@ -465,7 +469,16 @@ where
     ))
     .map_group(ast::Func::new)
     .validate(|func, #[allow(unused)] extra, #[allow(unused)] emitter| {
-        // TODO: an additional syntactic constraint on function bodies is that
+        if !func.body.is_return_block() {
+            // TODO: come up with custom error types for better more typesafe error reporting
+            emitter.emit(Rich::custom(
+                extra.span(),
+                format!(
+                    "The body of function {} is not a returning block",
+                    func.name
+                ),
+            ))
+        }
 
         // return func to continue validation of other functions
         func
