@@ -1,0 +1,13 @@
+# basic do-while expression
+
+# Output:
+# hello
+#
+
+# Program:
+
+begin
+  do
+    println "hello"
+  while false done
+end

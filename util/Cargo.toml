@@ -1,0 +1,28 @@
+[package]
+name = "util"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+doctest = false
+name = "util"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+# macro dependencies
+extend = { workspace = true }
+enum_primitive = { workspace = true }
+
+# utility dependencies
+thiserror = { workspace = true }
+bitflags = { workspace = true }
+once_cell = { workspace = true }
+internment = { workspace = true }
+derive_more = { workspace = true }
+bon = { workspace = true }
+recursion = { workspace = true }
+fn_pipe = { workspace = true }

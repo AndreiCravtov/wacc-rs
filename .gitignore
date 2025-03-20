@@ -1,1 +1,9 @@
 /target
+compile
+.*
+./*.wacc
+*.s
+*.core
+.wacc
+*.png
+*.dot

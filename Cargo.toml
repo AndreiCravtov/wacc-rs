@@ -1,13 +1,70 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
-    "fn_pipe_proc",
-    "fn_pipe",
-    "syntax",
+  "backend",
+  "compiler",
+  "frontend",
+  "middle",
+  "util",
+  "util/fn_pipe",
+  "util/fn_pipe/proc",
 ]
 
 [profile.dev]
-opt-level = 2
+opt-level = 1
+
+[profile.release]
+opt-level = 3
+
+# Common shared dependendencies configured once at the workspace
+# level, to be re-used more easily across workspace member crates.
+#
+# Common configurations include versions, paths, features, etc.
+[workspace.dependencies]
+## Crate members as common dependencies
+backend = { path = "backend" }
+compiler = { path = "compiler" }
+frontend = { path = "frontend" }
+middle = { path = "middle" }
+util = { path = "util" }
+fn_pipe = { path = "util/fn_pipe" }
+fn_pipe_proc = { path = "util/fn_pipe/proc" }
+
+# Proc-macro authoring tools
+syn = "2.0"
+quote = "1.0"
+proc-macro2 = "1.0"
+darling = "0.20"
+# Macro dependecies
+extend = "1.2"
+delegate = "0.13"
+impl-trait-for-tuples = "0.2"
+clap = "4.5"
+bitflags = "2.8"
+enum_primitive = "0.1"
+# Utility dependencies
+itertools = "0.14"
+thiserror = "2"
+internment = "0.8"
+recursion = "0.5"
+once_cell = "1.20"
+regex = "1.11"
+bon = "3.4"
+generativity = "1.1"
+# Functional generics/lenses frameworks
+frunk_core = "0.4"
+frunk = "0.4"
+frunk_utils = "0.2"
+frunk-enum-core = "0.3"
+# Parsing and error reporting
+ariadne = "0.5"
+parse_int = "0.6"
+chumsky = { git = "https://github.com/zesterer/chumsky", rev = "d12869a" } # currently latest chumsky commit
+derive_more = { version = "2.0.1", features = ["display"] }
+
+[workspace.lints.rust]
+static_mut_refs = "warn"      # Or use "warn" instead of deny
+incomplete_features = "allow"
 
 # Clippy's lint category level configurations;
 # every member crate needs to inherit these by adding
@@ -30,7 +87,6 @@ nursery = { level = "warn", priority = -1 }
 cargo = { level = "warn", priority = -1 }
 
 # Individual Clippy lints from the `restriction` category
-arbitrary_source_item_ordering = "warn"
 arithmetic_side_effects = "warn"
 as_conversions = "warn"
 assertions_on_result_states = "warn"
@@ -74,7 +130,6 @@ self_named_module_files = "deny"
 semicolon_inside_block = "warn"
 shadow_same = "warn"
 shadow_unrelated = "warn"
-single_call_fn = "warn"
 str_to_string = "warn"
 string_add = "warn"
 string_lit_chars_any = "warn"
@@ -91,3 +146,4 @@ unused_result_ok = "warn"
 unused_trait_names = "warn"
 unwrap_used = "warn"
 verbose_file_reads = "warn"
+static_mut_refs = "warn"
